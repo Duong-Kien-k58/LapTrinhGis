@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bản đồ WebGIS</title>
+
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=explore_nearby" />
+  </head>
+
+  <body>
+    <div class="map-wrapper">
+      <!-- Bản đồ -->
+      <div id="map"></div>
+      <div id="mouse-position"></div>
+      <!-- Nút đóng mở menu -->
+      <button id="menu-btn" class="menu-btn">☰</button>
+
+      <!-- Ô tìm kiếm -->
+      <div class="search-box">
+        <input type="text" placeholder="Tìm kiếm trên WebGIS" />
+        <button >
+          <span class="material-symbols-outlined">explore_nearby</span>
+        </button>
+      </div>
+
+      <!-- Lớp phủ tối nền khi mở menu -->
+      <div id="overlay" class="overlay"></div>
+
+      <!-- Sidebar -->
+      <div id="side-menu" class="side-menu">
+        <div class="menu-header">
+          <button id="close-menu" class="close-menu">☰</button>
+          <span>Hệ thống WebGIS</span>
+        </div>
+
+        <div class="menu-content">
+          <!-- Nhóm thao tác bản đồ -->
+          <div class="menu-group">
+            <div class="menu-group-title">
+              <span class="menu-icon">🛠</span>
+              <span>Thao tác bản đồ</span>
+            </div>
+              <div class="menu-sub-item" data-tool-action="measure">Đo khoảng cách / diện tích</div>
+              <div class="menu-sub-item" data-tool-action="select-box">Chọn đối tượng bằng vùng hộp</div>
+              <div class="menu-sub-item" data-tool-action="geolocation">Định vị vị trí hiện tại</div>
+              <div class="menu-sub-item" data-tool-action="print-map">In / xuất bản đồ</div>
+              <div class="menu-sub-item" data-tool-action="clear-tool">Tắt thao tác đang dùng</div>
+          </div>          
+
+          <!-- Nhóm 1 -->
+          <div class="menu-group">
+            <div class="menu-group-title">
+              <span class="menu-icon">⚙</span>
+              <span>Quản trị dữ liệu không gian</span>
+            </div>
+
+            <div class="menu-sub-item" data-menu-action="add-data">Thêm dữ liệu</div>
+            <div class="menu-sub-item" data-menu-action="edit-data">Sửa dữ liệu</div>
+            <div class="menu-sub-item" data-menu-action="delete-data">Xóa dữ liệu</div>
+            <div class="menu-sub-item">Tìm kiếm dữ liệu</div>
+            <div class="menu-sub-item">Xem dữ liệu Vector</div>
+            <div class="menu-sub-item">Xem dữ liệu Raster</div>
+          </div>
+
+          <div class="menu-line"></div>
+
+          <!-- Nhóm 2 -->
+          <div class="menu-group">
+            <div class="menu-group-title">
+              <span class="menu-icon">🧭</span>
+              <span>Hiển thị dữ liệu Vector</span>
+            </div>
+
+            <div class="menu-sub-item">Trình bày lớp Vector điểm</div>
+            <div class="menu-sub-item">Trình bày lớp Vector đường</div>
+            <div class="menu-sub-item">Trình bày lớp Vector vùng</div>
+          </div>
+
+          <div class="menu-line"></div>
+
+          <!-- Nhóm 3 -->
+          <div class="menu-group">
+            <div class="menu-group-title">
+              <span class="menu-icon">🗺</span>
+              <span>Hiển thị dữ liệu Raster</span>
+            </div>
+
+            <div class="menu-sub-item">Trình bày dữ liệu Raster</div>
+            <div class="menu-sub-item">Xem trước kết quả trình bày</div>
+          </div>
+
+          <div class="menu-line"></div>
+
+          <!-- Nhóm 4 -->
+          <div class="menu-group">
+            <div class="menu-group-title">
+              <span class="menu-icon">🎛</span>
+              <span>Cấu hình hiển thị bản đồ</span>
+            </div>
+
+            <div class="menu-sub-item">Quản trị, cấu hình hiển thị bản đồ</div>
+            <div class="menu-sub-item">Quản trị, cấu hình hiển thị nhóm bản đồ</div>
+            <div class="menu-sub-item">Quản trị, cấu hình hiển thị lớp</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Popup thông tin đối tượng -->
+      <div id="popup" class="ol-popup">
+        <a href="#" id="popup-closer" class="ol-popup-closer">x</a>
+        <div id="popup-content"></div>
+      </div>
+
+      <!-- Popup chọn lớp dữ liệu -->
+      <div id ="choose-layer-popup" class="simple-popup">
+        <div class="simple-popup-box">
+          <h3 id="choose-layer-title">Chọn lớp dữ liệu</h3>
+          <label>Chọn lớp thao tác:</label>
+          <select id="choose-layer-select"></select>
+          
+          <div class="popup-buttons">
+            <button id="choose-layer-cancel">Hủy</button>
+            <button id="choose-layer-ok">Tiếp tục</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Popup nhập thuộc tính sau khi vẽ -->
+       <div id="attribute-popup" class="simple-popup">
+        <div class="simple-popup-box">
+          <h3>Nhập thông tin thuộc tính</h3>
+          <div id="attribute-form"></div>
+
+          <div class="popup-buttons">
+            <button id="attribute-cancel">Hủy</button>
+            <button id="attribute-save">Lưu</button>
+          </div>
+        </div>
+       </div>
+
+
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
