@@ -1,37 +1,23 @@
 //#region 1. IMPORT THƯ VIỆN
-
 import 'ol/ol.css';
 import 'ol-layerswitcher/dist/ol-layerswitcher.css';
 import './style.css';
-
 import Map from 'ol/Map.js';
 import View from 'ol/View.js';
-
 import TileLayer from 'ol/layer/Tile.js';
 import VectorLayer from 'ol/layer/Vector.js';
 import LayerGroup from 'ol/layer/Group.js';
-
 import OSM from 'ol/source/OSM.js';
 import XYZ from 'ol/source/XYZ.js';
 import TileWMS from 'ol/source/TileWMS.js';
 import VectorSource from 'ol/source/Vector.js';
-
 import GeoJSON from 'ol/format/GeoJSON.js';
-
-import { fromLonLat } from 'ol/proj.js';
-
+import { fromLonLat, getPointResolution } from 'ol/proj.js';
 import LayerSwitcher from 'ol-layerswitcher';
-
 import Overlay from 'ol/Overlay.js';
-
 import Draw from 'ol/interaction/Draw.js';
-
-import {
-  Style,
-  Fill,
-  Stroke,
-  Circle as CircleStyle
-} from 'ol/style.js';
+import {Style,Fill,Stroke,Circle as CircleStyle} from 'ol/style.js';
+import { jsPDF } from 'jspdf';
 
 //control
 import ZoomToExtent from 'ol/control/ZoomToExtent.js';
@@ -40,6 +26,7 @@ import MousePosition from 'ol/control/MousePosition.js';
 import { createStringXY } from 'ol/coordinate.js';
 import OverviewMap from 'ol/control/OverviewMap.js';
 import FullScreen from 'ol/control/FullScreen.js';
+import Control from 'ol/control/Control.js';
 
 import Feature from 'ol/Feature.js';
 import Point from 'ol/geom/Point.js';
@@ -50,51 +37,37 @@ import { getLength, getArea } from 'ol/sphere.js';
 import DragPan from 'ol/interaction/DragPan.js';
 //#endregion
 
-
 //#region 2. BẢN ĐỒ NỀN
 const osmLayer = new TileLayer({
   title: 'OpenStreetMap', //Tiêu đề
   type: 'base', //Loại bản đồ nền
   visible: false, //Hiển thị ?
-  source: new OSM() //Tạo nguồn OSM load từ openstreetmap.org
+  source: new OSM({
+    crossOrigin: 'anonymous'
+  }
+  ) //Tạo nguồn OSM load từ openstreetmap.org
 });
-
 const toPoLayer = new TileLayer({
   title: 'Địa hình',
   type: 'base',
   visible: false,
   source: new OSM({
-    url: 'https://{a-c}.tile.opentopomap.org/{z}/{x}/{y}.png'
+    url: 'https://{a-c}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    crossOrigin: 'anonymous'
   })
 });
-
 const satelliteLayer = new TileLayer({
   title: 'Vệ tinh',
   type: 'base',
   visible: true,
   source: new XYZ({
-    url: 'http://mt0.google.com/vt/lyrs=s&hl=en&x={x}&y={y}&z={z}'
+    url: 'http://mt0.google.com/vt/lyrs=s&hl=en&x={x}&y={y}&z={z}', 
+    crossOrigin: 'anonymous'
   })
 });
-
 //#endregion
 
-
 //#region 3. CÁC LỚP WMS TỪ GEOSERVER
-
-// const wmsRgTinh = new TileLayer({
-//   title: 'WMS - Ranh giới tỉnh',
-//   visible: true,
-//   source: new TileWMS({ //Lấy nguồn dữ liệu từ WMS dạng tile
-//     url: 'http://localhost:8080/geoserver/webgis/wms', //địa chỉ máy chủ geoserver/ứng dụng geoserver/workspace/dịch vụ wms
-//     params: {
-//       LAYERS: 'rgtinh',
-//       TILED: true
-//     },
-//     serverType: 'geoserver'
-//   })
-// });
-
 const wmsVN_Tinh = new TileLayer({
   title: 'WMS - Việt Nam tỉnh',
   visible: true,
@@ -104,7 +77,9 @@ const wmsVN_Tinh = new TileLayer({
       LAYERS: 'vn_tinh',
       TILED: true
     },
-    serverType: 'geoserver'
+    serverType: 'geoserver',
+    crossOrigin: 'anonymous'
+
   })
 });
 
@@ -117,7 +92,8 @@ const wmsVN_Xa = new TileLayer({
       LAYERS: 'vn_xa',
       TILED: true
     },
-    serverType: 'geoserver'
+    serverType: 'geoserver',
+    crossOrigin: 'anonymous'
   })
 });
 
@@ -130,7 +106,8 @@ const wmsTinhLo = new TileLayer({
       LAYERS: 'tinhlo',
       TILED: true
     },
-    serverType: 'geoserver'
+    serverType: 'geoserver',
+    crossOrigin: 'anonymous'
   })
 });
 
@@ -143,7 +120,8 @@ const wmsQlo = new TileLayer({
       LAYERS: 'qlo',
       TILED: true
     },
-    serverType: 'geoserver'
+    serverType: 'geoserver',
+    crossOrigin: 'anonymous'
   })
 });
 
@@ -156,7 +134,8 @@ const wmsUyBan = new TileLayer({
       LAYERS: 'ub_tinh',
       TILED: true
     },
-    serverType: 'geoserver'
+    serverType: 'geoserver',
+    crossOrigin: 'anonymous'
   })
 });
 
@@ -169,21 +148,20 @@ const wmsNenBien = new TileLayer({
       LAYERS: 'nenbien',
       TILED: true
     },
-    serverType: 'geoserver'
+    serverType: 'geoserver',
+    crossOrigin: 'anonymous'
   })
 }); 
 
 //#endregion
 
-
 //#region 4. CÁC LỚP WFS TỪ GEOSERVER
-
-const wfsRgTinh = new VectorLayer({
-  title: 'WFS - Ranh giới tỉnh',
+const wfsVN_Tinh = new VectorLayer({
+  title: 'WFS - Tỉnh',
   visible: true,
   source: new VectorSource({
     format: new GeoJSON(),
-    url: 'http://localhost:8080/geoserver/webgis/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=webgis:rgtinh&outputFormat=application/json'
+    url: 'http://localhost:8080/geoserver/webgis/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=webgis:vn_tinh&outputFormat=application/json'
   }),
   style: new Style({
     fill: new Fill({
@@ -191,6 +169,24 @@ const wfsRgTinh = new VectorLayer({
     }),
     stroke: new Stroke({
       color: 'blue',
+      width: 2
+    })
+  })
+});
+
+const wfsVN_Xa = new VectorLayer({
+  title: 'WFS - Xã',
+  visible: true,
+  source: new VectorSource({
+    format: new GeoJSON(),
+    url: 'http://localhost:8080/geoserver/webgis/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=webgis:vn_xa&outputFormat=application/json'
+  }),
+  style: new Style({
+    fill: new Fill({
+      color: 'rgba(255, 0, 0, 0.5)'
+    }),
+    stroke: new Stroke({
+      color: 'red',
       width: 2
     })
   })
@@ -210,6 +206,21 @@ const wfsTinhLo = new VectorLayer({
     })
   })
 });
+
+const wfsQlo = new VectorLayer({
+  title: 'WFS - Quốc lộ',
+  visible: true,
+  source: new VectorSource({
+    format: new GeoJSON(),
+    url: 'http://localhost:8080/geoserver/webgis/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=webgis:qlo&outputFormat=application/json'
+  }),
+  style: new Style({
+    stroke: new Stroke({
+      color: 'orange',
+      width: 2
+    })
+  })
+}); 
 
 const wfsUyBan = new VectorLayer({
   title: 'WFS - UBND',
@@ -232,8 +243,24 @@ const wfsUyBan = new VectorLayer({
   })
 });
 
+const wfsNenBien = new VectorLayer({
+  title: 'WFS - Nền biển',
+  visible: true,
+  source: new VectorSource({
+    format: new GeoJSON(),
+    url: 'http://localhost:8080/geoserver/webgis/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=webgis:nenbien&outputFormat=application/json'
+  }),
+  style: new Style({
+    fill: new Fill({
+      color: 'rgba(0, 255, 255, 0.5)'
+    }),
+    stroke: new Stroke({
+      color: 'cyan',
+      width: 2
+    })
+  })
+});
 //#endregion
-
 
 //#region 5. LỚP RASTER WMS
 
@@ -251,7 +278,6 @@ const rasterHN = new TileLayer({
 });
 
 //#endregion
-
 
 //#region 6. NHÓM CÁC LỚP BẢN ĐỒ
 
@@ -280,9 +306,12 @@ const wfsGroup = new LayerGroup({
   title: 'Bản đồ WFS',
   visible: false,  
   layers: [
-    wfsRgTinh,
+    wfsVN_Tinh,
+    wfsVN_Xa,
     wfsTinhLo,
-    wfsUyBan
+    wfsQlo,
+    wfsUyBan,
+    wfsNenBien    
   ]
 });
 
@@ -294,7 +323,6 @@ const rasterGroup = new LayerGroup({
 });
 
 //#endregion
-
 
 //#region 7. KHỞI TẠO BẢN ĐỒ
 
@@ -318,20 +346,15 @@ const layerSwitcher = new LayerSwitcher({
   reverse: true,
   groupSelectStyle: 'group'
 });
-
 map.addControl(layerSwitcher);
 
-// ===============================
 // 1. ZoomToExtent - quay về phạm vi Hà Nội
-// ===============================
 const zoomToExtentControl = new ZoomToExtent({
   extent: fromLonLat([105.2, 20.5]).concat(fromLonLat([106.5, 21.6]))
 });
 map.addControl(zoomToExtentControl);
 
-// ===============================
 // 2. ScaleLine - thước tỷ lệ bản đồ
-// ===============================
 const scaleLineControl = new ScaleLine({
   units: 'metric',
   bar: true,
@@ -341,9 +364,7 @@ const scaleLineControl = new ScaleLine({
 });
 map.addControl(scaleLineControl);
 
-// ===============================
 // 3. MousePosition - hiển thị tọa độ chuột
-// ===============================
 const mousePositionControl = new MousePosition({
   coordinateFormat: createStringXY(6),
   projection: 'EPSG:4326',
@@ -353,9 +374,7 @@ const mousePositionControl = new MousePosition({
 });
 map.addControl(mousePositionControl);
 
-// ===============================
 // 4. OverviewMap - bản đồ tổng quan
-// ===============================
 const overviewMapControl = new OverviewMap({
   collapsed: false,
   layers: [
@@ -372,25 +391,23 @@ document.addEventListener('keydown', function (event) {
   }
 });
 
-// ===============================
 // 5. FullScreen - toàn màn hình
-// ===============================
 const fullScreenControl = new FullScreen();
 map.addControl(fullScreenControl);
+
 //#endregion
 
-//region 9. THAO TÁC BẢN ĐỒ NÂNG CAO
-// 1. ĐO KHOẢNG CÁCH / DIỆN TÍCH
-// Tạo nguồn lưu các đối tượng đo
-const measureSource = new VectorSource();
+//#region 9. THÊM CÁC CONTROL NÂNG CAO
 
-// Tạo lớp hiển thị kết quả đo
+//#region 9.1.  CÔNG CỤ ĐO KHOẢNG CÁCH / DIỆN TÍCH
+// Nguồn và lớp lưu kết quả đo
+const measureSource = new VectorSource();
 const measureLayer = new VectorLayer({
   title: 'Lớp đo đạc',
   source: measureSource,
   style: new Style({
     fill: new Fill({
-      color: 'rgba(255, 255, 255, 0.2)'
+      color: 'rgba(255,255,255,0.2)'
     }),
     stroke: new Stroke({
       color: '#ff0000',
@@ -404,18 +421,15 @@ const measureLayer = new VectorLayer({
     })
   })
 });
-
 map.addLayer(measureLayer);
 
-// Biến quản lý trạng thái đo
+// BIẾN QUẢN LÝ TRẠNG THÁI ĐO ĐẠC
 let measureDraw = null;
-let measureTooltipElement = null;
-let measureTooltip = null;
+let movingTooltip = null;
+let movingTooltipElement = null;
+let segmentCount = 0;
 
-// ===============================
-// Tạo popup công cụ đo đạc
-// ===============================
-
+// PANEL ĐO ĐẠC
 const measurePanel = document.createElement('div');
 measurePanel.id = 'measure-panel';
 measurePanel.className = 'advanced-panel';
@@ -441,25 +455,21 @@ const measureLineBtn = measurePanel.querySelector('#measure-line-btn');
 const measureAreaBtn = measurePanel.querySelector('#measure-area-btn');
 const measureClearBtn = measurePanel.querySelector('#measure-clear-btn');
 
-// ===============================
-// Hàm kéo popup đo đạc
-// ===============================
+// KÉO PANEL
 function makePanelDraggable(panel, header) {
-  let isDragging = false;
+  let dragging = false;
   let startX = 0;
   let startY = 0;
   let startLeft = 0;
   let startTop = 0;
 
-  header.addEventListener('mousedown', function (event) {
-    if (event.target.closest('button')) {
-      return;
-    }
+  header.addEventListener('mousedown', function (e) {
+    if (e.target.closest('button')) return;
 
-    isDragging = true;
+    dragging = true;
 
-    startX = event.clientX;
-    startY = event.clientY;
+    startX = e.clientX;
+    startY = e.clientY;
 
     const rect = panel.getBoundingClientRect();
     startLeft = rect.left;
@@ -473,37 +483,26 @@ function makePanelDraggable(panel, header) {
     document.body.style.userSelect = 'none';
   });
 
-  document.addEventListener('mousemove', function (event) {
-    if (!isDragging) {
-      return;
-    }
+  document.addEventListener('mousemove', function (e) {
+    if (!dragging) return;
 
-    const dx = event.clientX - startX;
-    const dy = event.clientY - startY;
-
-    panel.style.left = startLeft + dx + 'px';
-    panel.style.top = startTop + dy + 'px';
+    panel.style.left = startLeft + e.clientX - startX + 'px';
+    panel.style.top = startTop + e.clientY - startY + 'px';
   });
 
   document.addEventListener('mouseup', function () {
-    if (!isDragging) {
-      return;
-    }
-
-    isDragging = false;
+    dragging = false;
     document.body.style.userSelect = '';
   });
 }
 
 makePanelDraggable(measurePanel, measurePanelHeader);
 
-// ===============================
-// Hàm định dạng kết quả đo
-// ===============================
 
+// HÀM ĐỊNH DẠNG KẾT QUẢ
 function formatLength(line) {
   const length = getLength(line);
-  if (length > 1000) {
+  if (length >= 1000) {
     return (length / 1000).toFixed(2) + ' km';
   }
   return length.toFixed(2) + ' m';
@@ -511,52 +510,104 @@ function formatLength(line) {
 
 function formatArea(polygon) {
   const area = getArea(polygon);
-  if (area > 1000000) {
+  if (area >= 1000000) {
     return (area / 1000000).toFixed(2) + ' km²';
   }
   return area.toFixed(2) + ' m²';
 }
 
-// ===============================
-// Tạo nhãn hiển thị kết quả đo
-// ===============================
-
-function createMeasureTooltip() {
-  measureTooltipElement = document.createElement('div');
-  measureTooltipElement.className = 'measure-tooltip';
-  measureTooltip = new Overlay({
-    element: measureTooltipElement,
-    offset: [10, -15],
-    positioning: 'bottom-center'
-  });
-  map.addOverlay(measureTooltip);
+function getMidPoint(coord1, coord2) {
+  return [
+    (coord1[0] + coord2[0]) / 2,
+    (coord1[1] + coord2[1]) / 2
+  ];
 }
 
-// ===============================
-// Chỉ tắt thao tác đang vẽ, KHÔNG ẩn popup
-// ===============================
+
+// TẠO TOOLTIP
+function createTooltip(className, offset = [0, -12]) {
+  const element = document.createElement('div');
+  element.className = className;
+
+  const overlay = new Overlay({
+    element: element,
+    offset: offset,
+    positioning: 'bottom-center',
+    stopEvent: false
+  });
+
+  map.addOverlay(overlay);
+
+  return {
+    element,
+    overlay
+  };
+}
+
+function createMovingTooltip() {
+  const tooltip = createTooltip('measure-tooltip', [10, -15]);
+  movingTooltipElement = tooltip.element;
+  movingTooltip = tooltip.overlay;
+}
+
+function createStaticTooltip(text, coordinate, extraClass = '') {
+  const tooltip = createTooltip(
+    'measure-tooltip measure-tooltip-static ' + extraClass,
+    [0, -10]
+  );
+
+  tooltip.element.innerHTML = text;
+  tooltip.overlay.setPosition(coordinate);
+
+  return tooltip.overlay;
+}
+
+// XÓA TOOLTIP DI ĐỘNG
+function removeMovingTooltip() {
+  if (movingTooltip) {
+    map.removeOverlay(movingTooltip);
+  }
+
+  movingTooltip = null;
+  movingTooltipElement = null;
+}
+
+// DỪNG THAO TÁC ĐO ĐANG CHẠY
 function stopMeasureDrawOnly() {
   if (measureDraw) {
     map.removeInteraction(measureDraw);
     measureDraw = null;
   }
 
-  measureTooltipElement = null;
-  measureTooltip = null;
+  removeMovingTooltip();
+  segmentCount = 0;
 }
 
-// ===============================
-// Bắt đầu đo khoảng cách hoặc diện tích
-// ===============================
-function startMeasure(type) {
-  // Nếu đang đo dở thì tắt interaction cũ, nhưng popup vẫn giữ nguyên
-  stopMeasureDrawOnly();
+// HIỂN THỊ NHÃN KHOẢNG CÁCH TỪNG CẠNH
+function addSegmentLabels(coords, maxIndex) {
+  for (let i = segmentCount; i < maxIndex; i++) {
+    const start = coords[i];
+    const end = coords[i + 1];
 
-  createMeasureTooltip();
+    if (!start || !end) continue;
+
+    const segment = new LineString([start, end]);
+    const segmentLength = formatLength(segment);
+    const midPoint = getMidPoint(start, end);
+
+    createStaticTooltip(segmentLength, midPoint, 'measure-tooltip-segment');
+  }
+  segmentCount = maxIndex;
+}
+
+// ĐO KHOẢNG CÁCH
+function startMeasureLine() {
+  stopMeasureDrawOnly();
+  createMovingTooltip();
 
   measureDraw = new Draw({
     source: measureSource,
-    type: type
+    type: 'LineString'
   });
 
   map.addInteraction(measureDraw);
@@ -565,127 +616,148 @@ function startMeasure(type) {
     const geometry = event.feature.getGeometry();
 
     geometry.on('change', function (evt) {
-      const geom = evt.target;
-      let output = '';
-      let tooltipCoord = null;
+      const line = evt.target;
+      const coords = line.getCoordinates();
 
-      if (geom instanceof Polygon) {
-        output = formatArea(geom);
-        tooltipCoord = geom.getInteriorPoint().getCoordinates();
-      }
+      if (coords.length < 2) return;
 
-      if (geom instanceof LineString) {
-        output = formatLength(geom);
-        tooltipCoord = geom.getLastCoordinate();
-      }
+      // Khi đã chốt cạnh trước đó, hiển thị nhãn cố định cho cạnh đó
+      // Điểm cuối cùng trong lúc vẽ là vị trí chuột đang di động
+      const completedSegmentCount = Math.max(coords.length - 2, 0);
+      addSegmentLabels(coords, completedSegmentCount);
 
-      if (measureTooltipElement && measureTooltip) {
-        measureTooltipElement.innerHTML = output;
-        measureTooltip.setPosition(tooltipCoord);
+      // Hiển thị nhãn di động cho cạnh đang vẽ
+      const start = coords[coords.length - 2];
+      const end = coords[coords.length - 1];
+
+      const currentSegment = new LineString([start, end]);
+      const currentLength = formatLength(currentSegment);
+      const currentMidPoint = getMidPoint(start, end);
+
+      if (movingTooltip && movingTooltipElement) {
+        movingTooltipElement.innerHTML = currentLength;
+        movingTooltip.setPosition(currentMidPoint);
       }
     });
   });
 
-  measureDraw.on('drawend', function () {
-    if (measureTooltipElement) {
-      measureTooltipElement.className = 'measure-tooltip measure-tooltip-static';
-    }
+  measureDraw.on('drawend', function (event) {
+    const geometry = event.feature.getGeometry();
+    const coords = geometry.getCoordinates();
 
-    map.removeInteraction(measureDraw);
-    measureDraw = null;
+    // Hiển thị nốt nhãn của cạnh cuối cùng
+    addSegmentLabels(coords, coords.length - 1);
 
-    measureTooltipElement = null;
-    measureTooltip = null;
+    // Hiển thị tổng chiều dài ở điểm cuối polyline
+    const totalLength = formatLength(geometry);
+    const lastCoord = coords[coords.length - 1];
+
+    createStaticTooltip(
+      'Tổng: ' + totalLength,
+      lastCoord,
+      'measure-tooltip-total'
+    );
+
+    stopMeasureDrawOnly();
   });
 }
 
-// ===============================
-// Xóa toàn bộ kết quả đã đo
-// ===============================
-
-function clearMeasure() {
-  // Dừng vẽ nếu đang vẽ dở
+// ĐO DIỆN TÍCH
+function startMeasureArea() {
   stopMeasureDrawOnly();
+  createMovingTooltip();
 
-  // Xóa hình đo
+  measureDraw = new Draw({
+    source: measureSource,
+    type: 'Polygon'
+  });
+
+  map.addInteraction(measureDraw);
+
+  measureDraw.on('drawstart', function (event) {
+    const geometry = event.feature.getGeometry();
+
+    geometry.on('change', function (evt) {
+      const polygon = evt.target;
+      const areaText = formatArea(polygon);
+      const center = polygon.getInteriorPoint().getCoordinates();
+
+      if (movingTooltip && movingTooltipElement) {
+        movingTooltipElement.innerHTML = areaText;
+        movingTooltip.setPosition(center);
+      }
+    });
+  });
+
+  measureDraw.on('drawend', function (event) {
+    const polygon = event.feature.getGeometry();
+    const areaText = formatArea(polygon);
+    const center = polygon.getInteriorPoint().getCoordinates();
+
+    createStaticTooltip(
+      'Diện tích: ' + areaText,
+      center,
+      'measure-tooltip-total'
+    );
+
+    stopMeasureDrawOnly();
+  });
+}
+
+// XÓA TOÀN BỘ KẾT QUẢ ĐO
+function clearMeasure() {
+  stopMeasureDrawOnly();
   measureSource.clear();
 
-  // Xóa toàn bộ tooltip đo
-  map.getOverlays().getArray().slice().forEach(function (overlayItem) {
-    const element = overlayItem.getElement();
+  map.getOverlays().getArray().slice().forEach(function (overlay) {
+    const element = overlay.getElement();
 
-    if (
-      element &&
-      (
-        element.classList.contains('measure-tooltip') ||
-        element.classList.contains('measure-tooltip-static')
-      )
-    ) {
-      map.removeOverlay(overlayItem);
+    if (element && element.classList.contains('measure-tooltip')) {
+      map.removeOverlay(overlay);
     }
   });
+
+  measurePanel.classList.add('active');
 }
 
-// ===============================
-// Tắt riêng công cụ đo
-// ===============================
-
+// ĐÓNG PANEL ĐO
 function closeMeasurePanel() {
   stopMeasureDrawOnly();
   measurePanel.classList.remove('active');
 }
 
-// ===============================
-// Sự kiện các nút trong popup đo đạc
-// ===============================
+// SỰ KIỆN NÚT
+measureLineBtn.addEventListener('click', startMeasureLine);
+measureAreaBtn.addEventListener('click', startMeasureArea);
+measureClearBtn.addEventListener('click', clearMeasure);
+measurePanelClose.addEventListener('click', closeMeasurePanel);
+//#endregion
 
-measureLineBtn.addEventListener('click', function () {
-  startMeasure('LineString');
-});
+//#region 9.2.  CHỌN ĐỐI TƯỢNG BẰNG VÙNG HỘP
+let selectBoxActive = false;
+let selectedFeatures = [];
 
-measureAreaBtn.addEventListener('click', function () {
-  startMeasure('Polygon');
-});
+// Các lớp WFS cho phép chọn
+const selectableLayers = [
+  { id: 'tinhlo', name: 'Tỉnh lộ', layer: wfsTinhLo },
+  { id: 'uyban', name: 'Ủy ban', layer: wfsUyBan },
+  { id: 'vn_tinh', name: 'Tỉnh', layer: wfsVN_Tinh },
+  { id: 'vn_xa', name: 'Xã', layer: wfsVN_Xa },
+  { id: 'qlo', name: 'Quốc lộ', layer: wfsQlo },
+  { id: 'nenbien', name: 'Nền biển', layer: wfsNenBien },
+];
 
-measureClearBtn.addEventListener('click', function () {
-  clearMeasure();
-
-  // Sau khi xóa kết quả, popup vẫn hiện
-  measurePanel.classList.add('active');
-});
-
-measurePanelClose.addEventListener('click', function () {
-  closeMeasurePanel();
-});
-
-// ===============================
-// 3. CHỌN ĐỐI TƯỢNG BẰNG VÙNG HỘP
-// ===============================
-
-let isSelectBoxActive = false;
-let disabledDragPanInteractions = [];
-let selectedBoxFeatures = [];
-
-const selectBoxStyle = new Style({
-  fill: new Fill({
-    color: 'rgba(255, 255, 0, 0.35)'
-  }),
-  stroke: new Stroke({
-    color: '#ffff00',
-    width: 3
-  }),
+const selectedStyle = new Style({
+  fill: new Fill({ color: 'rgba(255,255,0,0.35)' }),
+  stroke: new Stroke({ color: '#ffff00', width: 3 }),
   image: new CircleStyle({
     radius: 8,
-    fill: new Fill({
-      color: '#ffff00'
-    }),
-    stroke: new Stroke({
-      color: '#ffffff',
-      width: 2
-    })
+    fill: new Fill({ color: '#ffff00' }),
+    stroke: new Stroke({ color: '#fff', width: 2 })
   })
 });
 
+// ================== TẠO PANEL ==================
 const selectBoxPanel = document.createElement('div');
 selectBoxPanel.id = 'select-box-panel';
 selectBoxPanel.className = 'advanced-panel';
@@ -693,17 +765,17 @@ selectBoxPanel.className = 'advanced-panel';
 selectBoxPanel.innerHTML = `
   <div class="advanced-panel-header">
     <span>Chọn đối tượng bằng vùng hộp</span>
-    <button id="select-box-close" class="advanced-panel-close" title="Tắt chọn vùng">×</button>
+    <button id="select-box-close" class="advanced-panel-close">×</button>
   </div>
 
   <div class="advanced-panel-body">
     <div class="select-box-guide">
-      Kéo chuột trực tiếp trên bản đồ để vẽ vùng chọn.
+      Chọn lớp WFS cần lấy đối tượng, sau đó kéo chuột trên bản đồ.
     </div>
 
-    <div class="select-box-actions">
-      <button id="select-box-clear">Xóa kết quả chọn</button>
-    </div>
+    <div id="select-box-layer-list"></div>
+
+    <button id="select-box-clear">Xóa kết quả chọn</button>
 
     <div class="select-box-summary">
       Số đối tượng đã chọn: <b id="select-box-count">0</b>
@@ -715,165 +787,147 @@ selectBoxPanel.innerHTML = `
 
 document.querySelector('.map-wrapper').appendChild(selectBoxPanel);
 
-const selectBoxCloseBtn = selectBoxPanel.querySelector('#select-box-close');
-const selectBoxClearBtn = selectBoxPanel.querySelector('#select-box-clear');
-const selectBoxResultList = selectBoxPanel.querySelector('#select-box-result');
-const selectBoxCount = selectBoxPanel.querySelector('#select-box-count');
+const layerListBox = document.getElementById('select-box-layer-list');
+const resultList = document.getElementById('select-box-result');
+const countBox = document.getElementById('select-box-count');
+const selectBoxPanelHeader = selectBoxPanel.querySelector('.advanced-panel-header');
+makePanelDraggable(selectBoxPanel, selectBoxPanelHeader);
 
-const selectBoxInteraction = new DragBox({
-  condition: function () {
-    return isSelectBoxActive;
+// ================== TẠO CHECKBOX LỚP WFS ==================
+function renderLayerCheckboxes() {
+  layerListBox.innerHTML = '';
+  selectableLayers.forEach(item => {
+    // Chỉ hiện checkbox với lớp WFS đang bật
+    if (!item.layer.getVisible()) return;
+
+    layerListBox.innerHTML += `
+      <label class="select-box-layer-item">
+        <input type="checkbox" value="${item.id}" checked>
+        ${item.name}
+      </label>
+    `;
+  });
+
+  if (layerListBox.innerHTML === '') {
+    layerListBox.innerHTML = `<div class="select-box-empty">Không có lớp WFS nào đang bật</div>`;
   }
-});
-
-function disableDragPanForSelectBox() {
-  disabledDragPanInteractions = map
-    .getInteractions()
-    .getArray()
-    .filter(function (interaction) {
-      return interaction instanceof DragPan;
-    });
-
-  disabledDragPanInteractions.forEach(function (interaction) {
-    interaction.setActive(false);
-  });
 }
 
-function restoreDragPanAfterSelectBox() {
-  disabledDragPanInteractions.forEach(function (interaction) {
-    interaction.setActive(true);
-  });
+function getCheckedLayers() {
+  const checkedIds = [...layerListBox.querySelectorAll('input:checked')]
+    .map(input => input.value);
 
-  disabledDragPanInteractions = [];
+  return selectableLayers.filter(item =>
+    checkedIds.includes(item.id) &&
+    item.layer.getVisible()
+  );
 }
 
-function clearSelectBoxResult() {
-  selectedBoxFeatures.forEach(function (feature) {
-    feature.setStyle(null);
-  });
-
-  selectedBoxFeatures = [];
-
-  selectBoxResultList.innerHTML = '';
-  selectBoxCount.innerText = '0';
-}
-
-function getFeatureName(feature, index) {
+// ================== HÀM PHỤ ==================
+function getName(feature, index) {
   return (
     feature.get('ten') ||
     feature.get('ten_tinh') ||
-    feature.get('TenTinhT') ||
+    feature.get('ten_xa') ||
     feature.get('tenduong') ||
-    feature.get('ten_duong') ||
+    feature.get('td') ||
+    feature.get('dosau') ||
+    feature.get('ma_tinh') ||
+    feature.get('ma_xa') ||
     feature.get('name') ||
     'Đối tượng ' + (index + 1)
   );
 }
 
-function getLayerTitle(layer) {
-  if (!layer) {
-    return 'Không rõ lớp';
-  }
-  return layer.get('title') || 'Không rõ lớp';
+function clearSelectBox() {
+  selectedFeatures.forEach(f => f.setStyle(null));
+  selectedFeatures = [];
+
+  resultList.innerHTML = '';
+  countBox.innerText = '0';
 }
 
-function getAllSelectableFeaturesInExtent(extent) {
-  const result = [];
-  const layers = [
-    wfsRgTinh,
-    wfsTinhLo,
-    wfsUyBan
-  ];
-  layers.forEach(function (layer) {
-    const source = layer.getSource();
-    if (!source) {
-      return;
-    }
+function findFeaturesInBox(extent) {
+  const items = [];
+  const checkedLayers = getCheckedLayers();
 
-    source.getFeatures().forEach(function (feature) {
-      const geometry = feature.getGeometry();
-      if (!geometry) {
-        return;
-      }
+  checkedLayers.forEach(item => {
+    const source = item.layer.getSource();
+    if (!source) return;
 
-      if (geometry.intersectsExtent(extent)) {
-        result.push({
+    source.getFeatures().forEach(feature => {
+      const geom = feature.getGeometry();
+      if (!geom) return;
+
+      if (geom.intersectsExtent(extent)) {
+        items.push({
           feature: feature,
-          layer: layer
+          layerName: item.name
         });
       }
     });
   });
-  return result;
+
+  return items;
 }
 
-function renderSelectBoxResult(selectedItems) {
-  selectBoxResultList.innerHTML = '';
-  selectBoxCount.innerText = selectedItems.length.toString();
-  if (selectedItems.length === 0) {
-    selectBoxResultList.innerHTML = '<li>Không có đối tượng nào trong vùng chọn</li>';
+function showResult(items) {
+  resultList.innerHTML = '';
+  countBox.innerText = items.length;
+
+  if (items.length === 0) {
+    resultList.innerHTML = '<li>Không có đối tượng nào trong vùng chọn</li>';
     return;
   }
 
-  selectedItems.forEach(function (item, index) {
-    const feature = item.feature;
-    const layer = item.layer;
-
-    const name = getFeatureName(feature, index);
-    const layerTitle = getLayerTitle(layer);
-
+  items.forEach((item, index) => {
     const li = document.createElement('li');
 
     li.innerHTML = `
-      <b>${index + 1}. ${name}</b>
-      <br>
-      <span>${layerTitle}</span>
+      <b>${index + 1}. ${getName(item.feature, index)}</b><br>
+      <span>${item.layerName}</span>
     `;
 
-    li.addEventListener('click', function () {
-      const geometry = feature.getGeometry();
-      if (!geometry) {
-        return;
-      }
-
-      map.getView().fit(geometry.getExtent(), {
+    li.onclick = () => {
+      map.getView().fit(item.feature.getGeometry().getExtent(), {
         padding: [80, 80, 80, 80],
         duration: 500,
         maxZoom: 15
       });
-    });
+    };
 
-    selectBoxResultList.appendChild(li);
+    resultList.appendChild(li);
   });
 }
 
-//Bắt đầu sự kiện kéo hộp chọn
-selectBoxInteraction.on('boxstart', function () {
-  clearSelectBoxResult();
+//  DRAG BOX
+const selectBox = new DragBox({
+  condition: () => selectBoxActive
 });
-// Kết thúc sự kiện kéo hộp chọn, thực hiện tìm kiếm đối tượng trong vùng chọn
-selectBoxInteraction.on('boxend', function () {
-  const extent = selectBoxInteraction.getGeometry().getExtent();
-  const selectedItems = getAllSelectableFeaturesInExtent(extent);
 
-  selectedItems.forEach(function (item) {
-    item.feature.setStyle(selectBoxStyle);
-    selectedBoxFeatures.push(item.feature);
+selectBox.on('boxstart', clearSelectBox);
+
+selectBox.on('boxend', () => {
+  const extent = selectBox.getGeometry().getExtent();
+  const items = findFeaturesInBox(extent);
+
+  items.forEach(item => {
+    item.feature.setStyle(selectedStyle);
+    selectedFeatures.push(item.feature);
   });
-  renderSelectBoxResult(selectedItems);
+
+  showResult(items);
 });
 
+
+//  BẬT / TẮT TOOL 
 function openSelectBoxTool() {
-  if (isSelectBoxActive) {
-    return;
-  }
+  selectBoxActive = true;
+  clearSelectBox();
+  renderLayerCheckboxes();
 
-  isSelectBoxActive = true;
-
-  disableDragPanForSelectBox();
-
-  if (!map.getInteractions().getArray().includes(selectBoxInteraction)) {
-    map.addInteraction(selectBoxInteraction);
+  if (!map.getInteractions().getArray().includes(selectBox)) {
+    map.addInteraction(selectBox);
   }
 
   selectBoxPanel.classList.add('active');
@@ -881,35 +935,29 @@ function openSelectBoxTool() {
 }
 
 function closeSelectBoxTool() {
-  isSelectBoxActive = false;
+  selectBoxActive = false;
+  clearSelectBox();
 
-  if (map.getInteractions().getArray().includes(selectBoxInteraction)) {
-    map.removeInteraction(selectBoxInteraction);
+  if (map.getInteractions().getArray().includes(selectBox)) {
+    map.removeInteraction(selectBox);
   }
-
-  clearSelectBoxResult();
-
-  restoreDragPanAfterSelectBox();
 
   selectBoxPanel.classList.remove('active');
   map.getTargetElement().style.cursor = '';
 }
 
-selectBoxCloseBtn.addEventListener('click', function () {
-  closeSelectBoxTool();
-});
 
-selectBoxClearBtn.addEventListener('click', function () {
-  clearSelectBoxResult();
-});
+//  SỰ KIỆN NÚT 
+document.getElementById('select-box-close').onclick = closeSelectBoxTool;
+document.getElementById('select-box-clear').onclick = clearSelectBox;
 
+//#endregion
 
-// ===============================
-// 6. GEOLOCATION - ĐỊNH VỊ HIỆN TẠI
-// ===============================
+//#region 9.3.  GEOLOCATION - ĐỊNH VỊ HIỆN TẠI
 
 let isGeolocationActive = false;
 let hasZoomedToCurrentPosition = false;
+let locateButton = null;
 
 const geolocation = new Geolocation({
   trackingOptions: {
@@ -925,11 +973,11 @@ geolocationFeature.setStyle(
     image: new CircleStyle({
       radius: 8,
       fill: new Fill({
-        color: '#3399CC'
+        color: '#1a73e8'
       }),
       stroke: new Stroke({
         color: '#ffffff',
-        width: 2
+        width: 3
       })
     })
   })
@@ -942,10 +990,23 @@ const geolocationLayer = new VectorLayer({
     features: [
       geolocationFeature
     ]
-  })
+  }),
+  zIndex: 9999
 });
 
 map.addLayer(geolocationLayer);
+
+function updateLocateButton(active) {
+  if (!locateButton) return;
+
+  if (active) {
+    locateButton.classList.add('active');
+    locateButton.title = 'Tắt định vị vị trí hiện tại';
+  } else {
+    locateButton.classList.remove('active');
+    locateButton.title = 'Định vị vị trí hiện tại';
+  }
+}
 
 geolocation.on('change:position', function () {
   if (!isGeolocationActive) {
@@ -983,6 +1044,7 @@ function locateUser() {
 
   geolocationLayer.setVisible(true);
   geolocation.setTracking(true);
+  updateLocateButton(true);
 
   const currentPosition = geolocation.getPosition();
 
@@ -1007,69 +1069,272 @@ function stopGeolocation() {
 
   geolocationFeature.setGeometry(null);
   geolocationLayer.setVisible(false);
+  updateLocateButton(false);
 }
 
-// ===============================
-// 7. IN / XUẤT BẢN ĐỒ
-// ===============================
+function createLocateControl() {
+  locateButton = document.createElement('button');
+  locateButton.className = 'ol-locate-btn';
+  locateButton.title = 'Định vị vị trí hiện tại';
+  locateButton.innerHTML = `
+    <span class="material-symbols-outlined">my_location</span>
+  `;
 
-function printMap() {
-  window.print();
+  const locateElement = document.createElement('div');
+  locateElement.className = 'ol-locate ol-control';
+  locateElement.appendChild(locateButton);
+
+  const locateControl = new Control({
+    element: locateElement
+  });
+
+  map.addControl(locateControl);
+
+  locateButton.addEventListener('click', function () {
+    if (isGeolocationActive) {
+      stopGeolocation();
+      return;
+    }
+
+    // Tắt các công cụ khác trước khi bật định vị
+    stopMeasureDrawOnly();
+    closeSelectBoxTool();
+
+    measurePanel.classList.remove('active');
+    selectBoxPanel.classList.remove('active');
+
+    locateUser();
+  });
 }
 
-// ===============================
-// 8. HÀM TẮT CÔNG CỤ ĐANG DÙNG
-// ===============================
+createLocateControl();
+
+//#endregion
+
+//#region 9.4. XUẤT BẢN ĐỒ RA PDF
+
+const pdfDims = {
+  a0: [1189, 841],
+  a1: [841, 594],
+  a2: [594, 420],
+  a3: [420, 297],
+  a4: [297, 210],
+  a5: [210, 148]
+};
+
+const printPanel = document.createElement('div');
+printPanel.id = 'print-panel';
+printPanel.className = 'advanced-panel';
+
+printPanel.innerHTML = `
+  <div class="advanced-panel-header" id="print-panel-header">
+    <span>Xuất bản đồ PDF</span>
+    <button id="print-panel-close" class="advanced-panel-close">×</button>
+  </div>
+
+  <div class="advanced-panel-body">
+    <label class="pdf-label">Khổ giấy</label>
+    <select id="pdf-format" class="pdf-select">
+      <option value="a0">A0</option>
+      <option value="a1">A1</option>
+      <option value="a2">A2</option>
+      <option value="a3">A3</option>
+      <option value="a4" selected>A4</option>
+      <option value="a5">A5</option>
+    </select>
+
+    <label class="pdf-label">Độ phân giải</label>
+    <select id="pdf-resolution" class="pdf-select">
+      <option value="72">72 dpi - nhanh</option>
+      <option value="150" selected>150 dpi</option>
+      <option value="300">300 dpi - chậm</option>
+    </select>
+
+    <label class="pdf-label">Tỷ lệ bản đồ</label>
+    <input id="pdf-scale" class="pdf-select" type="number" value="250000" min="1">
+    <div style="font-size:12px;color:#666;margin-top:4px">
+      Ví dụ: nhập 250000 nghĩa là 1:250.000
+    </div>
+
+    <button id="export-pdf-btn">Xuất PDF</button>
+  </div>
+`;
+
+document.querySelector('.map-wrapper').appendChild(printPanel);
+
+const printPanelHeader = document.getElementById('print-panel-header');
+const printPanelClose = document.getElementById('print-panel-close');
+const exportPdfBtn = document.getElementById('export-pdf-btn');
+
+makePanelDraggable(printPanel, printPanelHeader);
+
+function openPrintPanel() {
+  printPanel.classList.add('active');
+}
+
+function closePrintPanel() {
+  printPanel.classList.remove('active');
+}
+
+printPanelClose.onclick = closePrintPanel;
+
+function exportMapToPDF() {
+  const format = document.getElementById('pdf-format').value;
+  const dpi = Number(document.getElementById('pdf-resolution').value);
+  const scaleDenominator = Number(document.getElementById('pdf-scale').value);
+
+  if (!scaleDenominator || scaleDenominator <= 0) {
+    alert('Vui lòng nhập tỷ lệ hợp lệ, ví dụ: 250000');
+    return;
+  }
+
+  const dim = pdfDims[format];
+  const width = Math.round(dim[0] * dpi / 25.4);
+  const height = Math.round(dim[1] * dpi / 25.4);
+
+  const view = map.getView();
+  const mapEl = map.getTargetElement();
+
+  const oldResolution = view.getResolution();
+  const oldWidth = mapEl.style.width;
+  const oldHeight = mapEl.style.height;
+  const oldSatelliteVisible = satelliteLayer.getVisible();
+
+  // Vì công thức OpenLayers dùng đơn vị mét/mm,
+  // nên 1:250000 sẽ đổi thành 250.
+  const scale = scaleDenominator / 1000;
+
+  const printResolution =
+    scale /
+    getPointResolution(
+      view.getProjection(),
+      dpi / 25.4,
+      view.getCenter()
+    );
+
+  function restoreMap() {
+    scaleLineControl.setDpi();
+    mapEl.style.width = oldWidth;
+    mapEl.style.height = oldHeight;
+    map.updateSize();
+    view.setResolution(oldResolution);
+    satelliteLayer.setVisible(oldSatelliteVisible);
+
+    exportPdfBtn.disabled = false;
+    exportPdfBtn.innerText = 'Xuất PDF';
+    document.body.style.cursor = 'auto';
+  }
+
+  exportPdfBtn.disabled = true;
+  exportPdfBtn.innerText = 'Đang xuất PDF...';
+  document.body.style.cursor = 'progress';
+
+  // Tắt tạm lớp vệ tinh Google để tránh lỗi tainted canvas
+  satelliteLayer.setVisible(false);
+
+  scaleLineControl.setDpi(dpi);
+  mapEl.style.width = width + 'px';
+  mapEl.style.height = height + 'px';
+  map.updateSize();
+  view.setResolution(printResolution);
+
+  map.once('rendercomplete', function () {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+
+      map.getViewport()
+        .querySelectorAll('.ol-layer canvas, canvas.ol-layer')
+        .forEach(function (layerCanvas) {
+          if (layerCanvas.width <= 0 || layerCanvas.height <= 0) return;
+
+          const opacity = layerCanvas.parentNode.style.opacity;
+          ctx.globalAlpha = opacity === '' ? 1 : Number(opacity || 1);
+
+          const transform = layerCanvas.style.transform;
+          let matrix = [1, 0, 0, 1, 0, 0];
+
+          if (transform && transform.startsWith('matrix')) {
+            const match = transform.match(/^matrix\(([^\)]*)\)$/);
+            if (match) matrix = match[1].split(',').map(Number);
+          }
+
+          ctx.setTransform(...matrix);
+          ctx.drawImage(layerCanvas, 0, 0);
+        });
+
+      ctx.globalAlpha = 1;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+      const pdf = new jsPDF('landscape', 'mm', format);
+
+      pdf.addImage(
+        canvas.toDataURL('image/jpeg', 0.95),
+        'JPEG',
+        0,
+        0,
+        dim[0],
+        dim[1]
+      );
+
+      pdf.save('map.pdf');
+    } catch (error) {
+      console.error(error);
+      alert('Không xuất được PDF. Kiểm tra CORS của GeoServer hoặc tắt các lớp nền ngoài như vệ tinh.');
+    }
+
+    restoreMap();
+  });
+
+  map.renderSync();
+}
+
+exportPdfBtn.onclick = exportMapToPDF;
+
+//#endregion
+
+//#region 9.5.  QUẢN LÝ CÔNG CỤ NÂNG CAO
+//HÀM TẮT CÔNG CỤ ĐANG DÙNG
 function clearCurrentAdvancedTool() {
   stopMeasureDrawOnly();
-
   closeSelectBoxTool();
-
   stopGeolocation();
+  closePrintPanel();
 
   measurePanel.classList.remove('active');
   selectBoxPanel.classList.remove('active');
+  printPanel.classList.remove('active');
 }
 
-// ===============================
-// 9. GẮN SỰ KIỆN CHO MENU THAO TÁC
-// ===============================
-
+// GẮN SỰ KIỆN CHO MENU THAO TÁC
 document.querySelectorAll('[data-tool-action]').forEach(function (item) {
   item.addEventListener('click', function () {
     const action = item.dataset.toolAction;
-
     clearCurrentAdvancedTool();
 
     if (action === 'measure') {
       measurePanel.classList.add('active');
     }
-
     if (action === 'select-box') {
       openSelectBoxTool();
       alert('Kéo chuột trực tiếp trên bản đồ để chọn đối tượng');
     }
-
-    if (action === 'geolocation') {
-      locateUser();
-    }
-
     if (action === 'print-map') {
-      printMap();
+      openPrintPanel();
     }
-
-    if (action === 'clear-tool') {
-      clearCurrentAdvancedTool();
-      alert('Đã tắt thao tác đang dùng');
-    }
-
     closeMenu();
   });
 });
-//endregion
+//#endregion
 
-//#region 8. LỚP DỮ LIỆU TỰ TẠO TỪ FILE GEOJSON
+//#endregion
 
+//#region 10. LỚP DỮ LIỆU TỰ TẠO TỪ FILE GEOJSON
 const styleDuLieu = new Style({
   fill: new Fill({
     color: 'rgba(255, 0, 0, 0.5)'
@@ -1098,14 +1363,14 @@ const nguonLayer = new VectorSource({
 const duLieuLayer = new VectorLayer({
   title: 'Dữ liệu tự tạo',
   source: nguonLayer,
-  style: styleDuLieu
+  style: styleDuLieu,
+  visible: false
 });
 map.addLayer(duLieuLayer);
 
 //#endregion
 
-
-//#region 9. POPUP XEM THÔNG TIN ĐỐI TƯỢNG
+//#region 11. POPUP XEM THÔNG TIN ĐỐI TƯỢNG
 
 const container = document.getElementById('popup');
 const content = document.getElementById('popup-content');
@@ -1122,30 +1387,38 @@ const popup = new Overlay({
 
 map.addOverlay(popup);
 
+// ĐÓNG POPUP
 function closePopup() {
   popup.setPosition(undefined);
   cleanHighlight();
+  closer.blur();
   return false;
 }
-
 closer.onclick = closePopup;
 
+// LẤY GIÁ TRỊ THUỘC TÍNH THEO NHIỀU TÊN TRƯỜNG KHÁC NHAU
+function getProp(props, fields) {
+  for (const field of fields) {
+    if (props[field] !== undefined && props[field] !== null && props[field] !== '') {
+      return props[field];
+    }
+  }
+  return '';
+}
+
+// XÁC ĐỊNH TÊN LỚP ĐƯỢC CLICK
 function getLayerTitleFromFeatureLayer(layer) {
-  if (layer === wfsUyBan) {
-    return 'UB tỉnh';
-  }
-
-  if (layer === wfsTinhLo) {
-    return 'Tỉnh lộ';
-  }
-
-  if (layer === wfsRgTinh) {
-    return 'Ranh giới tỉnh';
-  }
+  if (layer === wfsUyBan) return 'UB tỉnh';
+  if (layer === wfsTinhLo) return 'Tỉnh lộ';
+  if (layer === wfsVN_Tinh) return 'Ranh giới tỉnh';
+  if (layer === wfsVN_Xa) return 'Ranh giới xã';
+  if (layer === wfsQlo) return 'Quốc lộ';
+  if (layer === wfsNenBien) return 'Nền biển';
 
   return 'Đối tượng';
 }
 
+// TẠO NỘI DUNG POPUP
 function createPopupContent(result) {
   const props = result.properties;
 
@@ -1153,7 +1426,16 @@ function createPopupContent(result) {
     return `
       <div class="popup_title">Thông tin UB tỉnh</div>
       <div class="popup_content">
-        <b>Tỉnh:</b> ${props.ten || props.ten_tinh || props.TenTinhT || ''}
+        <b>Tên UB:</b> ${getProp(props, ['ten', 'name'])}
+      </div>
+      <div class="popup_content">
+        <b>Tỉnh:</b> ${getProp(props, ['tinh', 'ten_tinh', 'TenTinhT'])}
+      </div>
+      <div class="popup_content">
+        <b>Cấp HC:</b> ${getProp(props, ['caphc'])}
+      </div>
+      <div class="popup_content">
+        <b>GID:</b> ${getProp(props, ['gid', 'id'])}
       </div>
     `;
   }
@@ -1163,11 +1445,37 @@ function createPopupContent(result) {
       <div class="popup_title">Thông tin tỉnh lộ</div>
 
       <div class="popup_content">
-        <b>Tên đường:</b> ${props.tenduong || props.ten_duong || props.ten || ''}
+        <b>Tên đường:</b> ${getProp(props, ['tenduong', 'ten_duong', 'ten', 'name'])}
       </div>
 
       <div class="popup_content">
-        <b>Loại đường:</b> ${props.loaiduong || props.loai_duong || ''}
+        <b>Loại đường:</b> ${getProp(props, ['loaiduong', 'loai_duong'])}
+      </div>
+
+      <div class="popup_content">
+        <b>TDG:</b> ${getProp(props, ['tdg'])}
+      </div>
+
+      <div class="popup_content">
+        <b>GID:</b> ${getProp(props, ['gid', 'id'])}
+      </div>
+    `;
+  }
+
+  if (result.layerTitle === 'Quốc lộ') {
+    return `
+      <div class="popup_title">Thông tin quốc lộ</div>
+
+      <div class="popup_content">
+        <b>Tên / thuộc tính đường:</b> ${getProp(props, ['td', 'tenduong', 'ten_duong', 'ten', 'name'])}
+      </div>
+
+      <div class="popup_content">
+        <b>Biên tập:</b> ${getProp(props, ['bientap'])}
+      </div>
+
+      <div class="popup_content">
+        <b>GID:</b> ${getProp(props, ['gid', 'id'])}
       </div>
     `;
   }
@@ -1177,29 +1485,87 @@ function createPopupContent(result) {
       <div class="popup_title">Thông tin tỉnh</div>
 
       <div class="popup_content">
-        <b>Tên tỉnh:</b> ${props.TenTinhT || props.ten || ''}
+        <b>Mã tỉnh:</b> ${getProp(props, ['ma_tinh'])}
       </div>
 
       <div class="popup_content">
-        <b>GID:</b> ${props.gid || ''}
+        <b>Tên tỉnh:</b> ${getProp(props, ['ten_tinh', 'TenTinhT', 'ten', 'name'])}
+      </div>
+
+      <div class="popup_content">
+        <b>Trụ sở:</b> ${getProp(props, ['tru_so'])}
+      </div>
+
+      <div class="popup_content">
+        <b>Loại:</b> ${getProp(props, ['loai'])}
+      </div>
+
+      <div class="popup_content">
+        <b>GID:</b> ${getProp(props, ['gid', 'id'])}
+      </div>
+    `;
+  }
+
+  if (result.layerTitle === 'Ranh giới xã') {
+    return `
+      <div class="popup_title">Thông tin xã</div>
+
+      <div class="popup_content">
+        <b>Mã xã:</b> ${getProp(props, ['ma_xa'])}
+      </div>
+
+      <div class="popup_content">
+        <b>Tên xã:</b> ${getProp(props, ['ten_xa', 'TenXa', 'ten', 'name'])}
+      </div>
+
+      <div class="popup_content">
+        <b>Tỉnh:</b> ${getProp(props, ['ten_tinh'])}
+      </div>
+
+      <div class="popup_content">
+        <b>Trụ sở:</b> ${getProp(props, ['tru_so'])}
+      </div>
+
+      <div class="popup_content">
+        <b>Loại:</b> ${getProp(props, ['loai'])}
+      </div>
+
+      <div class="popup_content">
+        <b>GID:</b> ${getProp(props, ['gid', 'id'])}
+      </div>
+    `;
+  }
+
+  if (result.layerTitle === 'Nền biển') {
+    return `
+      <div class="popup_title">Thông tin nền biển</div>
+
+      <div class="popup_content">
+        <b>Độ sâu:</b> ${getProp(props, ['dosau', 'ten', 'name'])}
+      </div>
+
+      <div class="popup_content">
+        <b>GID:</b> ${getProp(props, ['gid', 'id'])}
       </div>
     `;
   }
 
   return `
     <div class="popup_title">${result.layerTitle}</div>
+    <div class="popup_content">Không có thông tin thuộc tính phù hợp</div>
   `;
 }
 
+// XỬ LÝ CLICK VÀO ĐỐI TƯỢNG WFS
 function handleMapClickWFS(event) {
-  let selectedFeature = null;
-  let selectedLayer = null;
+  let foundFeature = null;
+  let foundLayer = null;
 
   map.forEachFeatureAtPixel(
     event.pixel,
     function (feature, layer) {
-      selectedFeature = feature;
-      selectedLayer = layer;
+      foundFeature = feature;
+      foundLayer = layer;
       return true;
     },
     {
@@ -1207,25 +1573,25 @@ function handleMapClickWFS(event) {
       layerFilter: function (layer) {
         return layer === wfsUyBan ||
                layer === wfsTinhLo ||
-               layer === wfsRgTinh;
+               layer === wfsVN_Tinh ||
+               layer === wfsVN_Xa ||
+               layer === wfsQlo ||
+               layer === wfsNenBien;
       }
     }
   );
 
-  if (!selectedFeature) {
+  if (!foundFeature) {
     popup.setPosition(undefined);
     cleanHighlight();
     return;
   }
 
-  highlightFeature(selectedFeature);
-
-  const properties = selectedFeature.getProperties();
-  const layerTitle = getLayerTitleFromFeatureLayer(selectedLayer);
+  highlightFeature(foundFeature);
 
   const result = {
-    layerTitle: layerTitle,
-    properties: properties
+    layerTitle: getLayerTitleFromFeatureLayer(foundLayer),
+    properties: foundFeature.getProperties()
   };
 
   content.innerHTML = createPopupContent(result);
@@ -1234,9 +1600,7 @@ function handleMapClickWFS(event) {
 
 //#endregion
 
-
-//#region 10. HIGHLIGHT ĐỐI TƯỢNG KHI CLICK
-
+//#region 12. HIGHLIGHT ĐỐI TƯỢNG KHI CLICK
 const highlightStyle = new Style({
   fill: new Fill({
     color: 'rgba(255, 255, 0, 0.5)'
@@ -1279,8 +1643,7 @@ function highlightFeature(feature) {
 
 //#endregion
 
-
-//#region 11. MENU TRÁI
+//#region 13. MENU TRÁI
 
 const menubtn = document.getElementById('menu-btn');
 const closeMenuBtn = document.getElementById('close-menu');
@@ -1301,10 +1664,24 @@ menubtn.addEventListener('click', openMenu);
 closeMenuBtn.addEventListener('click', closeMenu);
 overlay.addEventListener('click', closeMenu);
 
+// THU GỌN / MỞ RỘNG NHÓM MENU
+document.querySelectorAll('.menu-group-title').forEach(function (title) {
+  title.addEventListener('click', function () {
+    const currentGroup = title.closest('.menu-group');
+
+    document.querySelectorAll('.menu-group').forEach(function (group) {
+      if (group !== currentGroup) {
+        group.classList.remove('active');
+      }
+    });
+
+    currentGroup.classList.toggle('active');
+  });
+});
+
 //#endregion
 
-
-//#region 12. CẤU HÌNH LỚP THÊM / SỬA / XÓA
+//#region 14. CẤU HÌNH LỚP THÊM / SỬA / XÓA
 
 const editableLayers = [
   {
@@ -1314,7 +1691,9 @@ const editableLayers = [
     layer: wfsUyBan,
     apiName: 'ub_tinh',
     fields: [
-      { name: 'ten', label: 'Tên tỉnh' }
+      { name: 'ten', label: 'Tên UB' },
+      { name: 'caphc', label: 'Cấp hành chính' },
+      { name: 'tinh', label: 'Tỉnh' }
     ]
   },
   {
@@ -1325,25 +1704,67 @@ const editableLayers = [
     apiName: 'tinhlo',
     fields: [
       { name: 'tenduong', label: 'Tên đường' },
-      { name: 'loaiduong', label: 'Loại đường' }
+      { name: 'loaiduong', label: 'Loại đường' },
+      { name: 'tdg', label: 'TDG' }
     ]
   },
   {
-    id: 'rgtinh',
+    id: 'vn_tinh',
     title: 'Ranh giới tỉnh',
     geometryType: 'Polygon',
-    layer: wfsRgTinh,
-    apiName: 'rgtinh',
+    layer: wfsVN_Tinh,
+    apiName: 'vn_tinh',
     fields: [
-      { name: 'ten', label: 'Tên tỉnh' }
+      { name: 'ma_tinh', label: 'Mã tỉnh' },
+      { name: 'ten_tinh', label: 'Tên tỉnh' },
+      { name: 'sap_nhap', label: 'Sáp nhập' },
+      { name: 'quy_mo', label: 'Quy mô' },
+      { name: 'tru_so', label: 'Trụ sở' },
+      { name: 'loai', label: 'Loại' }
+    ]
+  },
+  {
+    id: 'vn_xa',
+    title: 'Ranh giới xã',
+    geometryType: 'Polygon',
+    layer: wfsVN_Xa,
+    apiName: 'vn_xa',
+    fields: [
+      { name: 'ma_xa', label: 'Mã xã' },
+      { name: 'ten_xa', label: 'Tên xã' },
+      { name: 'sap_nhap', label: 'Sáp nhập' },
+      { name: 'tru_so', label: 'Trụ sở' },
+      { name: 'loai', label: 'Loại' },
+      { name: 'ma_tinh', label: 'Mã tỉnh' },
+      { name: 'ten_tinh', label: 'Tên tỉnh' }
+    ]
+  },
+  {
+    id: 'qlo',
+    title: 'Quốc lộ',
+    geometryType: 'LineString',
+    layer: wfsQlo,
+    apiName: 'qlo',
+    fields: [
+      { name: 'bientap', label: 'Biên tập' },
+      { name: 'td', label: 'Tên / thuộc tính đường' }
+    ]
+  },
+  {
+    id: 'nenbien',
+    title: 'Nền biển',
+    geometryType: 'Polygon',
+    layer: wfsNenBien,
+    apiName: 'nenbien',
+    fields: [
+      { name: 'dosau', label: 'Độ sâu' }
     ]
   }
 ];
 
 //#endregion
 
-
-//#region 13. BIẾN TRẠNG THÁI THÊM / SỬA / XÓA
+//#region 15. BIẾN TRẠNG THÁI THÊM / SỬA / XÓA
 
 let currentAction = null;        // add, edit, delete
 let currentLayerConfig = null;   // lớp đang thao tác
@@ -1356,8 +1777,7 @@ let deletingFeature = null;      // đối tượng đang xóa
 
 //#endregion
 
-
-//#region 14. POPUP CHỌN LỚP DỮ LIỆU
+//#region 16. POPUP CHỌN LỚP DỮ LIỆU
 
 const chooseLayerPopup = document.getElementById('choose-layer-popup');
 const chooseLayerTitle = document.getElementById('choose-layer-title');
@@ -1420,9 +1840,7 @@ chooseLayerOk.addEventListener('click', function () {
 
 //#endregion
 
-
-//#region 15. POPUP NHẬP THUỘC TÍNH
-
+//#region 17. POPUP NHẬP THUỘC TÍNH
 const attributePopup = document.getElementById('attribute-popup');
 const attributeForm = document.getElementById('attribute-form');
 const attributeCancel = document.getElementById('attribute-cancel');
@@ -1435,13 +1853,18 @@ function createInputField(field, value = '') {
   const input = document.createElement('input');
   input.type = 'text';
   input.name = field.name;
-  input.value = value;
+  input.value = value || '';
 
   attributeForm.appendChild(label);
   attributeForm.appendChild(input);
 }
 
 function openAddAttributePopup() {
+  if (!currentLayerConfig) {
+    alert('Chưa chọn lớp dữ liệu');
+    return;
+  }
+
   attributeForm.innerHTML = '';
 
   currentLayerConfig.fields.forEach(function (field) {
@@ -1452,6 +1875,11 @@ function openAddAttributePopup() {
 }
 
 function openEditAttributePopup() {
+  if (!currentLayerConfig || !editingFeature) {
+    alert('Chưa chọn đối tượng để sửa');
+    return;
+  }
+
   attributeForm.innerHTML = '';
 
   const properties = editingFeature.getProperties();
@@ -1480,6 +1908,8 @@ attributeSave.addEventListener('click', function () {
     saveEditAttributes(inputs);
     return;
   }
+
+  alert('Chưa chọn thao tác thêm hoặc sửa');
 });
 
 attributeCancel.addEventListener('click', function () {
@@ -1496,8 +1926,7 @@ attributeCancel.addEventListener('click', function () {
 
 //#endregion
 
-
-//#region 16. HÀM DÙNG CHUNG CHO THÊM / SỬA / XÓA
+//#region 18. HÀM DÙNG CHUNG CHO THÊM / SỬA / XÓA
 
 function findFeatureInCurrentLayer(pixel) {
   let foundFeature = null;
@@ -1581,8 +2010,7 @@ function refreshLayer(layerConfig) {
 }
 //#endregion
 
-
-//#region 17. CHỨC NĂNG THÊM DỮ LIỆU
+//#region 19. CHỨC NĂNG THÊM DỮ LIỆU
 
 function startAdd() {
   if (!currentLayerConfig) {
@@ -1658,8 +2086,7 @@ function cancelAdd() {
 }
 //#endregion
 
-
-//#region 18. CHỨC NĂNG SỬA DỮ LIỆU
+//#region 20. CHỨC NĂNG SỬA DỮ LIỆU
 
 function startEdit() {
   if (!currentLayerConfig) {
@@ -1741,8 +2168,7 @@ function cancelEdit() {
 
 //#endregion
 
-
-//#region 19. CHỨC NĂNG XÓA DỮ LIỆU
+//#region 21. CHỨC NĂNG XÓA DỮ LIỆU
 
 function startDelete() {
   if (!currentLayerConfig) {
@@ -1808,8 +2234,7 @@ function handleDeleteClick(event) {
 
 //#endregion
 
-
-//#region 20. SỰ KIỆN MENU THÊM / SỬA / XÓA
+//#region 22. SỰ KIỆN MENU THÊM / SỬA / XÓA
 
 document.querySelectorAll('[data-menu-action]').forEach(function (button) {
   button.addEventListener('click', function () {
@@ -1827,14 +2252,16 @@ document.querySelectorAll('[data-menu-action]').forEach(function (button) {
       openChooseLayerPopup('delete');
     }
 
+    if (action === 'attribute-table') {
+          openAttributeTable();
+    }
     closeMenu();
   });
 });
 
 //#endregion
 
-
-//#region 21. SỰ KIỆN CLICK TRÊN BẢN ĐỒ
+//#region 23. SỰ KIỆN CLICK TRÊN BẢN ĐỒ
 
 map.on('singleclick', function (event) {
   if (drawInteraction) {
@@ -1852,6 +2279,277 @@ map.on('singleclick', function (event) {
   }
 
   handleMapClickWFS(event);
+});
+
+//#endregion
+
+//#region BẢNG DỮ LIỆU THUỘC TÍNH VECTOR
+
+let attributeTable = null;
+let attributeCache = [];
+let attributeHighlightLayer = null;
+let attributeLayerConfigs = [];
+
+const attributeTablePanel = document.getElementById('attribute-table-panel');
+const attributeLayerSelect = document.getElementById('attribute-layer-select');
+const loadAttributeBtn = document.getElementById('load-attribute-btn');
+const closeAttributeTableBtn = document.getElementById('close-attribute-table');
+
+function getLayerUrl(layer) {
+  const source = layer.getSource();
+
+  if (!source || !source.getUrl) return null;
+
+  const url = source.getUrl();
+
+  if (typeof url !== 'string') return null;
+
+  return url;
+}
+
+function createAttributeLayerConfigs() {
+  attributeLayerConfigs = [];
+
+  wfsGroup.getLayers().getArray().forEach(function (layer) {
+    const url = getLayerUrl(layer);
+
+    if (!url) return;
+
+    attributeLayerConfigs.push({
+      title: layer.get('title') || 'Lớp không tên',
+      layer: layer,
+      url: url
+    });
+  });
+}
+
+function renderAttributeLayerOptions() {
+  createAttributeLayerConfigs();
+
+  attributeLayerSelect.innerHTML = '';
+
+  attributeLayerConfigs.forEach(function (config, index) {
+    const option = document.createElement('option');
+
+    option.value = index;
+    option.innerText = config.title.replace('WFS - ', '');
+
+    attributeLayerSelect.appendChild(option);
+  });
+
+  if (attributeLayerConfigs.length === 0) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.innerText = 'Không có lớp WFS';
+    attributeLayerSelect.appendChild(option);
+  }
+}
+
+function getCurrentAttributeConfig() {
+  const index = Number(attributeLayerSelect.value);
+  return attributeLayerConfigs[index];
+}
+
+function openAttributeTable() {
+  renderAttributeLayerOptions();
+  attributeTablePanel.classList.add('active');
+}
+
+function closeAttributeTable() {
+  attributeTablePanel.classList.remove('active');
+  clearAttributeHighlight();
+}
+
+function clearAttributeHighlight() {
+  if (attributeHighlightLayer) {
+    map.removeLayer(attributeHighlightLayer);
+    attributeHighlightLayer = null;
+  }
+}
+
+function getAttributeUrl(config) {
+  const url = new URL(config.url, window.location.href);
+
+  url.searchParams.set('maxFeatures', '50000');
+  url.searchParams.set('outputFormat', 'application/json');
+
+  return url.toString();
+}
+
+function zoomToAttributeFeature(rowData) {
+  const rawFeature = attributeCache[rowData.__index];
+
+  if (!rawFeature) {
+    alert('Không tìm thấy đối tượng');
+    return;
+  }
+
+  const format = new GeoJSON();
+
+  const feature = format.readFeature(rawFeature, {
+    featureProjection: map.getView().getProjection(),
+    dataProjection: 'EPSG:4326'
+  });
+
+  const geometry = feature.getGeometry();
+
+  if (!geometry) {
+    alert('Đối tượng không có hình học');
+    return;
+  }
+
+  clearAttributeHighlight();
+
+  attributeHighlightLayer = new VectorLayer({
+    source: new VectorSource({
+      features: [feature]
+    }),
+    style: new Style({
+      fill: new Fill({
+        color: 'rgba(255, 0, 0, 0.25)'
+      }),
+      stroke: new Stroke({
+        color: 'red',
+        width: 3
+      }),
+      image: new CircleStyle({
+        radius: 8,
+        fill: new Fill({
+          color: 'red'
+        }),
+        stroke: new Stroke({
+          color: 'white',
+          width: 2
+        })
+      })
+    }),
+    zIndex: 9999
+  });
+
+  map.addLayer(attributeHighlightLayer);
+
+  if (geometry.getType() === 'Point') {
+    map.getView().animate({
+      center: geometry.getCoordinates(),
+      zoom: 14,
+      duration: 600
+    });
+  } else {
+    map.getView().fit(geometry.getExtent(), {
+      padding: [80, 80, 80, 80],
+      duration: 600,
+      maxZoom: 15
+    });
+  }
+}
+
+function createAttributeColumns(features) {
+  const properties = features[0].properties || {};
+  const fields = Object.keys(properties);
+
+  const viewColumn = {
+    title: 'Xem',
+    formatter: function () {
+      return '<span class="table-view-btn">🔍</span>';
+    },
+    width: 70,
+    hozAlign: 'center',
+    headerSort: false,
+    cellClick: function (e, cell) {
+      zoomToAttributeFeature(cell.getRow().getData());
+    }
+  };
+
+  const attributeColumns = fields.map(function (field) {
+    return {
+      title: field.toUpperCase(),
+      field: field,
+      headerFilter: 'input',
+      minWidth: 120
+    };
+  });
+
+  return [viewColumn, ...attributeColumns];
+}
+
+function loadAttributeTable() {
+  const config = getCurrentAttributeConfig();
+
+  if (!config) {
+    alert('Chưa có lớp WFS để tải dữ liệu');
+    return;
+  }
+
+  loadAttributeBtn.disabled = true;
+  loadAttributeBtn.innerText = 'Đang tải...';
+
+  fetch(getAttributeUrl(config))
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (data) {
+      const features = data.features || [];
+
+      attributeCache = features;
+
+      if (features.length === 0) {
+        alert('Lớp này không có dữ liệu');
+        return;
+      }
+
+      const rows = features.map(function (feature, index) {
+        return {
+          ...feature.properties,
+          __index: index
+        };
+      });
+
+      const columns = createAttributeColumns(features);
+
+      if (attributeTable) {
+        attributeTable.destroy();
+      }
+
+      attributeTable = new window.Tabulator('#tabulator-table', {
+        data: rows,
+        columns: columns,
+        layout: 'fitDataStretch',
+        pagination: 'local',
+        paginationSize: 10,
+        height: '100%',
+        placeholder: 'Không có dữ liệu'
+      });
+
+      // Đồng bộ lại dữ liệu lên source của lớp WFS
+      const format = new GeoJSON();
+
+      const mapFeatures = format.readFeatures(data, {
+        featureProjection: map.getView().getProjection(),
+        dataProjection: 'EPSG:4326'
+      });
+
+      config.layer.getSource().clear();
+      config.layer.getSource().addFeatures(mapFeatures);
+    })
+    .catch(function (error) {
+      console.error(error);
+      alert('Không tải được dữ liệu từ GeoServer');
+    })
+    .finally(function () {
+      loadAttributeBtn.disabled = false;
+      loadAttributeBtn.innerText = 'Tải dữ liệu';
+    });
+}
+
+loadAttributeBtn.addEventListener('click', loadAttributeTable);
+closeAttributeTableBtn.addEventListener('click', closeAttributeTable);
+
+attributeLayerSelect.addEventListener('change', function () {
+  clearAttributeHighlight();
+
+  if (attributeTable) {
+    attributeTable.clearData();
+  }
 });
 
 //#endregion

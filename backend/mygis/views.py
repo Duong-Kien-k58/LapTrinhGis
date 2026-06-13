@@ -4,30 +4,49 @@ from django.db import connection
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-
 LAYER_CONFIG = {
     'ub_tinh': {
         'table': 'ub_tinh',
         'id_field': 'gid',
         'geom_field': 'geom',
-        'fields': ['ten'],
+        'fields': ['ten', 'caphc', 'tinh'],
     },
 
     'tinhlo': {
         'table': 'tinhlo',
         'id_field': 'gid',
         'geom_field': 'geom',
-        'fields': ['tenduong', 'loaiduong'],
+        'fields': ['tenduong', 'loaiduong', 'tdg'],
     },
 
-    'rgtinh': {
-        'table': 'rgtinh',
+    'vn_tinh': {
+        'table': 'vn_tinh',
         'id_field': 'gid',
         'geom_field': 'geom',
-        'fields': ['ten'],
+        'fields': ['ma_tinh', 'ten_tinh', 'sap_nhap', 'quy_mo', 'tru_so', 'loai'],
+    },
+
+    'vn_xa': {
+        'table': 'vn_xa',
+        'id_field': 'gid',
+        'geom_field': 'geom',
+        'fields': ['ma_xa', 'ten_xa', 'sap_nhap', 'tru_so', 'loai', 'ma_tinh', 'ten_tinh'],
+    },
+
+    'qlo': {
+        'table': 'qlo',
+        'id_field': 'gid',
+        'geom_field': 'geom',
+        'fields': ['bientap', 'td'],
+    },
+
+    'nenbien': {
+        'table': 'nenbien',
+        'id_field': 'gid',
+        'geom_field': 'geom',
+        'fields': ['dosau'],
     },
 }
-
 
 def get_layer_config(layer_name):
     return LAYER_CONFIG.get(layer_name)
