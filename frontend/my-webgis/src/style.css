@@ -10,11 +10,6 @@ body {
   height: 100%;
 }
 
-
-/* =========================================================
-   2. KHUNG BẢN ĐỒ
-========================================================= */
-
 .map-wrapper {
   position: relative;
   width: 100vw;
@@ -30,12 +25,12 @@ body {
 
 
 /* =========================================================
-   3. POPUP THÔNG TIN ĐỐI TƯỢNG
+   2. POPUP THÔNG TIN ĐỐI TƯỢNG
 ========================================================= */
 
 .ol-popup {
   position: absolute;
-  background-color: white;
+  background: #ffffff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   padding: 12px;
   border-radius: 8px;
@@ -43,12 +38,11 @@ body {
   bottom: 12px;
   left: -50px;
   min-width: 240px;
-  font-family: Arial, sans-serif;
   font-size: 13px;
 }
 
-.ol-popup:after,
-.ol-popup:before {
+.ol-popup::after,
+.ol-popup::before {
   top: 100%;
   border: solid transparent;
   content: "";
@@ -58,25 +52,25 @@ body {
   pointer-events: none;
 }
 
-.ol-popup:after {
-  border-top-color: white;
+.ol-popup::after {
+  border-top-color: #ffffff;
   border-width: 10px;
   left: 48px;
   margin-left: -10px;
 }
 
 .ol-popup-closer {
-  text-decoration: none;
   position: absolute;
   top: 4px;
   right: 8px;
-  color: #333;
+  text-decoration: none;
+  color: #333333;
   font-weight: bold;
   font-size: 18px;
 }
 
 .ol-popup-closer:hover {
-  color: red;
+  color: #d93025;
 }
 
 .popup_title,
@@ -92,7 +86,7 @@ body {
 
 
 /* =========================================================
-   4. NÚT MENU VÀ Ô TÌM KIẾM
+   3. NÚT MENU VÀ Ô TÌM KIẾM
 ========================================================= */
 
 .menu-btn {
@@ -103,8 +97,8 @@ body {
   height: 46px;
   border: none;
   border-radius: 50%;
-  background: white;
-  color: #333;
+  background: #ffffff;
+  color: #333333;
   font-size: 24px;
   cursor: pointer;
   z-index: 1000;
@@ -127,13 +121,17 @@ body {
   left: 80px;
   width: 300px;
   height: 35px;
-  background: white;
+  background: #ffffff;
   border-radius: 24px;
   display: flex;
   align-items: center;
   z-index: 999;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.search-box:focus-within {
+  border-radius: 18px 18px 0 0;
 }
 
 .search-box input {
@@ -143,18 +141,18 @@ body {
   outline: none;
   padding: 0 18px;
   font-size: 15px;
-  color: #333;
+  color: #333333;
 }
 
 .search-box input::placeholder {
-  color: #777;
+  color: #777777;
 }
 
 .search-box button {
   width: 56px;
   height: 100%;
   border: none;
-  background: white;
+  background: #ffffff;
   cursor: pointer;
   font-size: 18px;
 }
@@ -165,7 +163,88 @@ body {
 
 
 /* =========================================================
-   5. OVERLAY VÀ SIDEBAR MENU TRÁI
+   4. GỢI Ý TÌM KIẾM
+========================================================= */
+
+.search-suggest-panel {
+  position: absolute;
+  top: 62px;
+  left: 80px;
+  width: 360px;
+  max-height: 430px;
+  background: #ffffff;
+  border-radius: 0 0 18px 18px;
+  z-index: 1700;
+  display: none;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+
+.search-suggest-panel.active {
+  display: block;
+}
+
+#search-suggest-list {
+  max-height: 430px;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.search-suggest-item {
+  display: flex;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  align-items: flex-start;
+  box-sizing: border-box;
+}
+
+.search-suggest-item:hover {
+  background: #f1f3f4;
+}
+
+.search-suggest-icon {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: 50%;
+  background: #f1f3f4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5f6368;
+  font-size: 15px;
+}
+
+.search-suggest-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-suggest-name {
+  font-size: 14px;
+  color: #202124;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.search-suggest-desc {
+  font-size: 12.5px;
+  color: #5f6368;
+  line-height: 1.35;
+}
+
+.search-suggest-empty,
+.search-suggest-loading {
+  padding: 16px 18px;
+  font-size: 14px;
+  color: #6b7280;
+  text-align: center;
+}
+
+
+/* =========================================================
+   5. OVERLAY VÀ SIDEBAR MENU
 ========================================================= */
 
 .overlay {
@@ -186,7 +265,7 @@ body {
   left: -390px;
   width: 370px;
   height: 100vh;
-  background: white;
+  background: #ffffff;
   z-index: 1300;
   box-shadow: 3px 0 12px rgba(0, 0, 0, 0.3);
   transition: left 0.25s ease;
@@ -217,7 +296,7 @@ body {
   border: none;
   background: transparent;
   font-size: 24px;
-  color: #333;
+  color: #333333;
   cursor: pointer;
 }
 
@@ -233,25 +312,45 @@ body {
 }
 
 .menu-group {
-  padding: 4px 0;
+  padding: 0;
+  border-bottom: 1px solid #eeeeee;
+  background: #ffffff;
 }
 
 .menu-group-title {
-  min-height: 48px;
+  position: relative;
+  min-height: 52px;
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 0 24px;
+  padding: 0 48px 0 24px;
   box-sizing: border-box;
   color: #202124;
   font-size: 14px;
   font-weight: bold;
   line-height: 1.35;
   cursor: pointer;
+  user-select: none;
 }
 
-.menu-group-title:hover {
-  background: #f5f5f5;
+.menu-group-title::after {
+  content: "▾";
+  position: absolute;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #777777;
+  font-size: 15px;
+  transition: transform 0.2s ease;
+}
+
+.menu-group.active .menu-group-title::after {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.menu-group-title:hover,
+.menu-group.active .menu-group-title {
+  background: #f7f8fa;
 }
 
 .menu-icon {
@@ -264,7 +363,7 @@ body {
 
 .menu-sub-item {
   min-height: 38px;
-  display: flex;
+  display: none;
   align-items: center;
   padding-left: 64px;
   padding-right: 20px;
@@ -273,6 +372,10 @@ body {
   font-size: 13.5px;
   line-height: 1.35;
   cursor: pointer;
+}
+
+.menu-group.active .menu-sub-item {
+  display: flex;
 }
 
 .menu-sub-item:hover {
@@ -286,22 +389,17 @@ body {
 }
 
 .menu-line {
-  height: 1px;
-  background: #e0e0e0;
-  margin: 8px 0;
+  display: none;
 }
 
 
 /* =========================================================
-   6. POPUP ĐƠN GIẢN CHO THÊM / SỬA / XÓA
+   6. POPUP THÊM / SỬA / XÓA
 ========================================================= */
 
 .simple-popup {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   background: rgba(0, 0, 0, 0.35);
   z-index: 3000;
   display: none;
@@ -315,11 +413,10 @@ body {
 
 .simple-popup-box {
   width: 360px;
-  background: white;
+  background: #ffffff;
   border-radius: 8px;
   padding: 18px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-  font-family: Arial, sans-serif;
 }
 
 .simple-popup-box h3 {
@@ -341,7 +438,7 @@ body {
   height: 36px;
   margin-bottom: 12px;
   padding: 0 8px;
-  border: 1px solid #ccc;
+  border: 1px solid #cccccc;
   border-radius: 6px;
   box-sizing: border-box;
 }
@@ -362,18 +459,18 @@ body {
 
 #choose-layer-cancel,
 #attribute-cancel {
-  background: #ddd;
+  background: #dddddd;
 }
 
 #choose-layer-ok,
 #attribute-save {
   background: #1a73e8;
-  color: white;
+  color: #ffffff;
 }
 
 
 /* =========================================================
-   7. CONTROL MẶC ĐỊNH CỦA OPENLAYERS
+   7. CONTROL OPENLAYERS
 ========================================================= */
 
 .layer-switcher {
@@ -395,7 +492,21 @@ body {
   right: 20px !important;
 }
 
-/* Nút định vị vị trí hiện tại */
+.ol-full-screen {
+  right: 20px !important;
+  top: 130px !important;
+}
+
+.ol-scale-bar {
+  left: 20px !important;
+  bottom: 25px !important;
+}
+
+.ol-overviewmap {
+  left: 20px !important;
+  bottom: 70px !important;
+}
+
 .ol-locate {
   top: 180px !important;
   left: auto !important;
@@ -435,16 +546,6 @@ body {
   line-height: 1 !important;
 }
 
-.ol-full-screen {
-  right: 20px !important;
-  top: 130px !important;
-}
-
-.ol-scale-bar {
-  left: 20px !important;
-  bottom: 25px !important;
-}
-
 #mouse-position {
   position: absolute;
   right: 10px;
@@ -455,23 +556,12 @@ body {
   border-radius: 6px;
   font-size: 16px;
   font-weight: bold;
-  font-family: Arial, sans-serif;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 .custom-mouse-position {
   color: #202124;
 }
-
-.ol-overviewmap {
-  left: 20px !important;
-  bottom: 70px !important;
-}
-
-
-/* =========================================================
-   8. ẨN CONTROL KHI MỞ LAYER SWITCHER
-========================================================= */
 
 .map-wrapper:has(.layer-switcher.shown) .ol-zoom,
 .map-wrapper:has(.layer-switcher.shown) .ol-zoom-extent,
@@ -480,10 +570,23 @@ body {
   display: none !important;
 }
 
+/* Ẩn thước tỷ lệ khi người dùng tắt trong cấu hình */
+.map-wrapper.hide-scale-control .ol-scale-line,
+.map-wrapper.hide-scale-control .ol-scale-bar {
+  display: none !important;
+}
 
+/* Ẩn tọa độ chuột khi người dùng tắt trong cấu hình */
+.map-wrapper.hide-mouse-position #mouse-position {
+  display: none !important;
+}
+
+/* Ẩn bản đồ tổng quan khi người dùng tắt trong cấu hình */
+.map-wrapper.hide-overview-control .ol-overviewmap {
+  display: none !important;
+}
 /* =========================================================
-   9. PANEL THAO TÁC NÂNG CAO
-   DÙNG CHUNG CHO ĐO ĐẠC, CHỌN VÙNG, CÔNG CỤ KHÁC
+   8. PANEL THAO TÁC NÂNG CAO
 ========================================================= */
 
 .advanced-panel {
@@ -499,7 +602,6 @@ body {
   z-index: 1600;
   display: none;
   overflow: hidden;
-  font-family: Arial, sans-serif;
   font-size: 14px;
   border: 1px solid rgba(0, 0, 0, 0.08);
 }
@@ -543,7 +645,6 @@ body {
 
 .advanced-panel-close:hover {
   background: rgba(255, 255, 255, 0.18) !important;
-  color: #ffffff !important;
 }
 
 .advanced-panel-body {
@@ -578,88 +679,13 @@ body {
 
 
 /* =========================================================
-   9.1. PANEL CHỌN ĐỐI TƯỢNG BẰNG VÙNG HỘP
-========================================================= */
-
-#select-box-panel {
-  top: 90px;
-  right: 24px;
-  left: auto;
-  width: 350px;
-}
-
-.select-box-guide {
-  font-size: 13px;
-  color: #444;
-  line-height: 1.45;
-  background: #f8fafd;
-  border: 1px solid #e3e8f0;
-  border-radius: 8px;
-  padding: 9px 10px;
-  margin-bottom: 10px;
-}
-
-.select-box-actions {
-  margin-bottom: 10px;
-}
-
-.select-box-actions button {
-  background: #e53935;
-  color: #ffffff;
-}
-
-.select-box-actions button:hover {
-  background: #c62828;
-}
-
-.select-box-summary {
-  font-size: 13px;
-  color: #333;
-  margin-bottom: 8px;
-  padding: 7px 9px;
-  border-radius: 7px;
-  background: #f1f3f4;
-}
-
-#select-box-count {
-  color: #0b5394;
-}
-
-.advanced-result-list {
-  max-height: 230px;
-  overflow-y: auto;
-  padding-left: 18px;
-  margin: 0;
-}
-
-.advanced-result-list li {
-  margin-bottom: 8px;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1.4;
-  padding: 6px 6px;
-  border-radius: 6px;
-}
-
-.advanced-result-list li:hover {
-  color: #0b5394;
-  background: #f1f6ff;
-}
-
-.advanced-result-list li span {
-  color: #5f6368;
-  font-size: 12px;
-}
-
-
-/* =========================================================
-   10. TOOLTIP ĐO KHOẢNG CÁCH / DIỆN TÍCH
+   9. ĐO ĐẠC
 ========================================================= */
 
 .measure-tooltip {
   position: relative;
   background: rgba(30, 30, 30, 0.85);
-  color: #fff;
+  color: #ffffff;
   padding: 4px 8px;
   border-radius: 6px;
   font-size: 12px;
@@ -676,35 +702,27 @@ body {
 }
 
 .measure-tooltip-segment {
-  color: #333;
+  color: #333333;
   border-color: #ff9800;
 }
 
 .measure-tooltip-total {
   background: #ff0000;
-  color: #fff;
+  color: #ffffff;
   border-color: #ff0000;
   font-weight: 700;
 }
 
+
 /* =========================================================
-   11. CHẾ ĐỘ IN / XUẤT BẢN ĐỒ
+   10. CHỌN ĐỐI TƯỢNG BẰNG VÙNG HỘP
 ========================================================= */
 
-@media print {
-  .side-menu,
-  .menu-btn,
-  .search-box,
-  .layer-switcher,
-  .advanced-panel,
-  .ol-control {
-    display: none !important;
-  }
-
-  #map {
-    width: 100vw !important;
-    height: 100vh !important;
-  }
+#select-box-panel {
+  top: 90px;
+  right: 24px;
+  left: auto;
+  width: 350px;
 }
 
 .select-box-layer-item {
@@ -721,81 +739,236 @@ body {
   margin-right: 6px;
 }
 
-.select-box-empty {
-  padding: 8px;
-  color: #777;
+.select-box-summary {
   font-size: 13px;
-  background: #f5f5f5;
-  border-radius: 6px;
+  color: #333333;
   margin-bottom: 8px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: #f1f3f4;
 }
 
-/* =========================================================
-   12. MENU THU GỌN THEO NHÓM
-========================================================= */
+#select-box-count {
+  color: #0b5394;
+}
 
-.menu-group {
+.select-box-empty {
+  padding: 10px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #6b7280;
+  font-size: 13px;
+  text-align: center;
+}
+
+#select-box-result,
+.advanced-result-list {
+  margin: 8px 0 0 0;
   padding: 0;
-  border-bottom: 1px solid #eeeeee;
+  list-style: none;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
-.menu-group-title {
-  position: relative;
-  min-height: 52px;
+#select-box-result::-webkit-scrollbar {
+  width: 6px;
+}
+
+#select-box-result::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+#select-box-result::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.select-box-group {
+  margin-bottom: 8px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.select-box-group-header {
+  height: 42px;
+  padding: 0 12px;
+  background: linear-gradient(135deg, #f8fafc, #eef2ff);
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 0 48px 0 24px;
-  box-sizing: border-box;
-  color: #202124;
-  font-size: 14px;
-  font-weight: bold;
-  line-height: 1.35;
+  justify-content: space-between;
   cursor: pointer;
-  user-select: none;
+  font-weight: 700;
+  color: #111827;
+  border-bottom: 1px solid #e5e7eb;
+  transition: all 0.2s ease;
 }
 
-.menu-group-title::after {
-  content: "▾";
-  position: absolute;
-  right: 22px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #777;
-  font-size: 15px;
-  transition: transform 0.2s ease;
+.select-box-group-header:hover {
+  background: linear-gradient(135deg, #e0f2fe, #dbeafe);
 }
 
-.menu-group.active .menu-group-title::after {
-  transform: translateY(-50%) rotate(180deg);
+.select-box-group.active .select-box-group-header {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
 }
 
-.menu-group-title:hover {
-  background: #f5f5f5;
-}
-
-.menu-group .menu-sub-item {
-  display: none;
-}
-
-.menu-group.active .menu-sub-item {
+.select-box-group-header span:first-child {
   display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.menu-group.active {
+.select-box-group-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  border-radius: 50%;
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+}
+
+.select-box-group.active .select-box-group-icon {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+.select-box-group-header b {
+  min-width: 28px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+}
+
+.select-box-group.active .select-box-group-header b {
+  background: #ffffff;
+  color: #1d4ed8;
+}
+
+.select-box-group-body {
+  display: none;
+  padding: 6px;
   background: #ffffff;
 }
 
-.menu-group.active .menu-group-title {
-  background: #f7f8fa;
+.select-box-result-item {
+  padding: 9px 10px;
+  margin-bottom: 5px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #ffffff;
+  border: 1px solid transparent;
+  transition: all 0.18s ease;
 }
 
-.menu-line {
-  display: none;
+.select-box-result-item:last-child {
+  margin-bottom: 0;
 }
+
+.select-box-result-item:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  transform: translateX(2px);
+}
+
+.select-box-result-item b {
+  display: block;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.3;
+  margin-bottom: 2px;
+}
+
+.select-box-result-item span {
+  display: block;
+  color: #6b7280;
+  font-size: 12.5px;
+}
+
+
+/* Popup khi chọn bằng vùng hộp */
+.select-box-popup {
+  min-width: 260px;
+  max-width: 360px;
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  border: 1px solid #d0d7de;
+  overflow: hidden;
+  display: block;
+}
+
+.select-box-popup-header {
+  height: 38px;
+  background: #ff3300;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.select-box-popup-close {
+  border: none;
+  background: transparent;
+  color: #ffffff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.select-box-popup-content {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 10px;
+  font-size: 13px;
+  color: #222222;
+}
+
+.select-box-popup-title {
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 5px;
+  color: #ff3300;
+}
+
+.select-box-popup-layer {
+  margin-bottom: 8px;
+  color: #555555;
+}
+
+.select-box-popup-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.select-box-popup-table td {
+  border-bottom: 1px solid #eeeeee;
+  padding: 5px 4px;
+  vertical-align: top;
+}
+
+.select-box-popup-table td:first-child {
+  width: 38%;
+  font-weight: 700;
+  color: #333333;
+}
+
 
 /* =========================================================
-   13. POPUP XUẤT PDF
+   11. XUẤT PDF
 ========================================================= */
 
 #print-panel {
@@ -810,7 +983,7 @@ body {
   margin-bottom: 5px;
   font-size: 13px;
   font-weight: bold;
-  color: #333;
+  color: #333333;
 }
 
 .pdf-label:first-child {
@@ -828,6 +1001,33 @@ body {
   box-sizing: border-box;
 }
 
+.pdf-scale-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pdf-scale-row .pdf-select {
+  flex: 1;
+}
+
+#pdf-zoom-scale-btn {
+  width: 78px;
+  height: 36px;
+  margin-top: 0;
+  border: none;
+  border-radius: 7px;
+  background: #16a34a;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#pdf-zoom-scale-btn:hover {
+  background: #15803d;
+}
+
 #export-pdf-btn {
   margin-top: 14px;
   background: #1a73e8;
@@ -843,15 +1043,17 @@ body {
   cursor: wait;
 }
 
+.pdf-note {
+  margin-top: 5px;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.35;
+}
+
 
 /* =========================================================
-   BẢNG THUỘC TÍNH - CỐ ĐỊNH 1/3 PHÍA DƯỚI BẢN ĐỒ
+   12. BẢNG THUỘC TÍNH
 ========================================================= */
-
-.map-wrapper {
-  position: relative;
-  overflow: hidden;
-}
 
 .attribute-table-panel {
   position: absolute;
@@ -864,13 +1066,10 @@ body {
   background: #ffffff;
   z-index: 1800;
   display: none;
+  flex-direction: column;
   box-sizing: border-box;
   border-top: 2px solid #c9c9c9;
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
-
-  /* Quan trọng: chia header + bảng */
-  display: none;
-  flex-direction: column;
 }
 
 .attribute-table-panel.active {
@@ -878,71 +1077,84 @@ body {
 }
 
 .attribute-table-header {
-  height: 56px;
-  min-height: 56px;
+  height: 46px;
+  min-height: 46px;
   background: #0b5394;
   color: #ffffff;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 6px 12px;
   box-sizing: border-box;
   border-bottom: 1px solid #d0d0d0;
 }
 
 .attribute-table-header b {
   white-space: nowrap;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .attribute-table-header label {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .attribute-table-header select {
-  height: 36px;
-  min-width: 140px;
+  height: 32px;
+  min-width: 145px;
   border: none;
   border-radius: 6px;
-  padding: 0 10px;
+  padding: 0 9px;
   outline: none;
+  font-size: 13px;
 }
 
 .attribute-table-header button {
-  height: 36px;
+  height: 32px;
   border: none;
   border-radius: 6px;
-  padding: 0 14px;
+  padding: 0 13px;
   cursor: pointer;
-  font-size: 14px;
-}
-
-#load-attribute-btn {
-  background: #e8f0fe;
-  color: #174ea6;
+  font-size: 13px;
   font-weight: 600;
 }
 
-#load-attribute-btn:hover {
+#load-attribute-btn,
+#table-btn-add {
+  background: #e8f0fe;
+  color: #174ea6;
+  font-weight: 700;
+}
+
+#load-attribute-btn:hover,
+#table-btn-add:hover {
   background: #d2e3fc;
+}
+
+#table-btn-add.active {
+  background: #d93025 !important;
+  color: #ffffff !important;
 }
 
 #close-attribute-table {
   margin-left: auto;
   background: transparent;
   color: #ffffff;
-  font-size: 28px;
+  font-size: 25px;
   line-height: 1;
-  padding: 0 10px;
+  padding: 0 9px;
 }
 
 #close-attribute-table:hover {
   background: rgba(255, 255, 255, 0.15);
 }
 
-/* Vùng chứa bảng chiếm toàn bộ phần còn lại */
+
+/* =========================================================
+   13. TABULATOR TRONG BẢNG THUỘC TÍNH
+========================================================= */
+
 #tabulator-table {
   flex: 1;
   min-height: 0;
@@ -952,27 +1164,196 @@ body {
   box-sizing: border-box;
 }
 
-/* Tabulator phủ kín vùng bảng */
 #tabulator-table .tabulator {
   width: 100% !important;
   height: 100% !important;
   border: none;
-  font-size: 14px;
+  font-size: 13px;
 }
 
+/* Header cột */
 #tabulator-table .tabulator-header {
+  background: #f3f4f6;
+  border-bottom: 1px solid #d0d7de;
   font-weight: bold;
 }
 
-#tabulator-table .tabulator-col-title {
+#tabulator-table .tabulator-header .tabulator-col {
+  min-height: 46px !important;
+  height: 46px !important;
+  background: #f3f4f6;
+}
+
+#tabulator-table .tabulator-header .tabulator-col-content {
+  padding: 2px 5px !important;
+}
+
+#tabulator-table .tabulator-header .tabulator-col-title {
+  height: 17px !important;
+  line-height: 17px !important;
+  font-size: 12.5px !important;
+  font-weight: 700;
   text-align: center;
+  color: #2f3437;
 }
 
-.table-view-btn {
+/* Ô lọc */
+#tabulator-table .tabulator-header .tabulator-header-filter {
+  margin-top: 1px !important;
+  padding: 0 4px 2px 4px !important;
+}
+
+#tabulator-table .tabulator-header .tabulator-header-filter input {
+  height: 22px !important;
+  min-height: 22px !important;
+  padding: 1px 6px !important;
+  font-size: 12.5px !important;
+  line-height: 20px !important;
+  border: 1px solid #b8bec6;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+#tabulator-table .tabulator-header .tabulator-header-filter input:focus {
+  border-color: #1a73e8;
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(26, 115, 232, 0.18);
+}
+
+#tabulator-table .tabulator-arrow {
+  transform: scale(0.8);
+}
+
+/* Riêng cột thao tác không có filter */
+#tabulator-table .tabulator-header .tabulator-col:first-child .tabulator-col-title {
+  line-height: 40px !important;
+}
+
+/* Hàng dữ liệu */
+#tabulator-table .tabulator-row {
+  min-height: 34px !important;
+}
+
+#tabulator-table .tabulator-cell {
+  padding: 4px 7px !important;
+  font-size: 13px;
+  line-height: 24px;
+  vertical-align: middle;
+}
+
+#tabulator-table .tabulator-row.tabulator-selected {
+  background: #d8e8ff !important;
+}
+
+#tabulator-table .tabulator-row:hover {
+  background: #eef5ff !important;
+}
+
+#tabulator-table .tabulator-placeholder {
+  background: #f8f9fa;
+  color: #6b7280;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+
+/* Nút xem / sửa / xóa trong từng dòng */
+.table-row-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+}
+
+.table-row-btn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border: none;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #ffffff;
+  transition: all 0.18s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
 }
 
-.table-view-btn:hover {
-  opacity: 0.7;
+.table-row-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  pointer-events: none;
+}
+
+.table-row-btn.view {
+  background: linear-gradient(
+    135deg,
+    rgba(47, 128, 237, 0.82),
+    rgba(21, 101, 216, 0.82)
+  );
+}
+
+.table-row-btn.edit {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 193, 7, 0.86),
+    rgba(245, 158, 11, 0.86)
+  );
+}
+
+.table-row-btn.delete {
+  background: linear-gradient(
+    135deg,
+    rgba(239, 83, 80, 0.84),
+    rgba(211, 47, 47, 0.84)
+  );
+}
+
+.table-row-btn.view:hover {
+  background: linear-gradient(135deg, #2f80ed, #1565d8);
+}
+
+.table-row-btn.edit:hover {
+  background: linear-gradient(135deg, #ffc107, #f59e0b);
+}
+
+.table-row-btn.delete:hover {
+  background: linear-gradient(135deg, #ef5350, #d32f2f);
+}
+
+.table-row-btn:hover {
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22);
+}
+
+.table-row-btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+}
+
+
+/* =========================================================
+   14. CHẾ ĐỘ IN
+========================================================= */
+
+@media print {
+  .side-menu,
+  .menu-btn,
+  .search-box,
+  .search-suggest-panel,
+  .layer-switcher,
+  .advanced-panel,
+  .attribute-table-panel,
+  .ol-control {
+    display: none !important;
+  }
+
+  #map {
+    width: 100vw !important;
+    height: 100vh !important;
+  }
 }

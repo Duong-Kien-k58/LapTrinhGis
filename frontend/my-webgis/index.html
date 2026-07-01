@@ -18,12 +18,17 @@
       <!-- Nút đóng mở menu -->
       <button id="menu-btn" class="menu-btn">☰</button>
 
-      <!-- Ô tìm kiếm -->
+      <!-- Ô tìm kiếm kiểu Google Maps -->
       <div class="search-box">
-        <input type="text" placeholder="Tìm kiếm trên WebGIS" />
-        <button >
+        <input id="search-input" type="text" placeholder="Tìm kiếm trên WebGIS" autocomplete="off" />
+        <button id="search-btn" title="Tìm kiếm">
           <span class="material-symbols-outlined">explore_nearby</span>
         </button>
+      </div>
+
+      <!-- Bảng gợi ý / kết quả tìm kiếm -->
+      <div id="search-suggest-panel" class="search-suggest-panel">
+        <div id="search-suggest-list"></div>
       </div>
 
       <!-- Lớp phủ tối nền khi mở menu -->
@@ -99,9 +104,17 @@
               <span>Cấu hình hiển thị bản đồ</span>
             </div>
 
-            <div class="menu-sub-item">Quản trị, cấu hình hiển thị bản đồ</div>
-            <div class="menu-sub-item">Quản trị, cấu hình hiển thị nhóm bản đồ</div>
-            <div class="menu-sub-item">Quản trị, cấu hình hiển thị lớp</div>
+           <div class="menu-sub-item" data-config-action="map-config">
+              Quản trị, cấu hình hiển thị bản đồ
+            </div>
+
+            <div class="menu-sub-item" data-config-action="group-config">
+              Quản trị, cấu hình hiển thị nhóm bản đồ
+            </div>
+
+            <div class="menu-sub-item" data-config-action="layer-config">
+              Quản trị, cấu hình hiển thị lớp
+            </div>
           </div>
         </div>
       </div>
@@ -147,7 +160,9 @@
           <select id="attribute-layer-select"></select>
 
           <button id="load-attribute-btn" title="Tải dữ liệu">Tải dữ liệu</button>
+          <button id="table-btn-add" class="table-tool-btn" title="Thêm đối tượng mới">➕ Thêm</button>
           <button id="close-attribute-table" title="Đóng bảng">×</button>
+          
         </div>
         <div id="tabulator-table"></div>
       </div>
