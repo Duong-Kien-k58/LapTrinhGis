@@ -102,7 +102,8 @@ export const MAP_LAYER_CONFIGS = [
     title: 'Bảng chắp 25K',
     group: 'background',
     geometryType: 'Polygon',
-    visible: true,
+    // Chỉ bật thủ công trong danh sách lớp, không tự hiện khi đổi dịch vụ bản đồ.
+    visible: false,
 
     // Cho phép xem bảng thuộc tính và click tra cứu.
     selectable: true,

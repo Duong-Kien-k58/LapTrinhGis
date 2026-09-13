@@ -329,20 +329,24 @@ document.querySelectorAll('.menu-group-title').forEach(function (title) {
 });
 
 // CHUYỂN NHANH DỊCH VỤ BẢN ĐỒ
-// Vector chỉ hiển thị các WMS; hai chế độ raster chỉ bật đúng lớp được chọn.
+// Vector hiển thị toàn bộ lớp vector, trừ Khung 25K. Hai chế độ raster chỉ
+// hiện raster được chọn cùng Nền biển và Nước ngoài; Khung 25K luôn chỉ bật tay.
 function setLayerService(service) {
   const showVector = service === 'vector';
   const rasterLayerId = service === 'satellite' ? 'vn25k' : 'dem_vietnam';
-  const baseDataGroupId = 'background';
+  const rasterBackgroundLayerIds = new Set(['nenbien', 'nuocngoai']);
+  const manualOnlyLayerIds = new Set(['khung25k']);
 
-  // Dữ liệu nền luôn hiển thị. Chỉ các lớp trong phạm vi Việt Nam mới đổi theo dịch vụ.
+  // Không dựa vào cả nhóm "Dữ liệu nền", vì nhóm này còn có Khung 25K.
   layerConfigs.forEach(function (config) {
-    const isBaseData = config.group === baseDataGroupId;
-    config.wmsLayer.setVisible(isBaseData || showVector);
+    const isManualOnly = manualOnlyLayerIds.has(config.id);
+    const isRasterBackground = rasterBackgroundLayerIds.has(config.id);
+    config.wmsLayer.setVisible(!isManualOnly && (showVector || isRasterBackground));
   });
   thematicGroups.forEach(function (group) {
-    const isBaseDataGroup = group.get('tocGroupId') === baseDataGroupId;
-    group.setVisible(isBaseDataGroup || showVector);
+    // Nhóm background phải vẫn bật ở raster để Nền biển/Nước ngoài hiển thị.
+    const isBackgroundGroup = group.get('tocGroupId') === 'background';
+    group.setVisible(showVector || isBackgroundGroup);
   });
 
   // Khi xem raster, chỉ lớp raster được chọn được phép hiển thị; dữ liệu nền vẫn nằm trên nó.
