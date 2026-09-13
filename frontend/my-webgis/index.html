@@ -4,12 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bản đồ WebGIS</title>
-
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=explore_nearby,my_location" />  </head>
-    
-    <link href="https://unpkg.com/tabulator-tables@5.4.4/dist/css/tabulator.min.css" rel="stylesheet">
-    <script src="https://unpkg.com/tabulator-tables@5.4.4/dist/js/tabulator.min.js"></script>
-
+  </head>
   <body>
     <div class="map-wrapper">
       <!-- Bản đồ -->
@@ -21,9 +16,7 @@
       <!-- Ô tìm kiếm kiểu Google Maps -->
       <div class="search-box">
         <input id="search-input" type="text" placeholder="Tìm kiếm trên WebGIS" autocomplete="off" />
-        <button id="search-btn" title="Tìm kiếm">
-          <span class="material-symbols-outlined">explore_nearby</span>
-        </button>
+        <button id="search-btn" title="Tìm kiếm"><svg class="search-icon" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg></button>
       </div>
 
       <!-- Bảng gợi ý / kết quả tìm kiếm -->
@@ -74,25 +67,12 @@
           <div class="menu-group">
             <div class="menu-group-title">
               <span class="menu-icon">🧭</span>
-              <span>Hiển thị dữ liệu Vector</span>
+              <span>Cung cấp dịch vụ bản đồ</span>
             </div>
 
-            <div class="menu-sub-item">Trình bày lớp Vector điểm</div>
-            <div class="menu-sub-item">Trình bày lớp Vector đường</div>
-            <div class="menu-sub-item">Trình bày lớp Vector vùng</div>
-          </div>
-
-          <div class="menu-line"></div>
-
-          <!-- Nhóm 3 -->
-          <div class="menu-group">
-            <div class="menu-group-title">
-              <span class="menu-icon">🗺</span>
-              <span>Hiển thị dữ liệu Raster</span>
-            </div>
-
-            <div class="menu-sub-item">Trình bày dữ liệu Raster</div>
-            <div class="menu-sub-item">Xem trước kết quả trình bày</div>
+            <div class="menu-sub-item" data-layer-service="vector">Dữ liệu vector</div>
+            <div class="menu-sub-item" data-layer-service="satellite">Dữ liệu ảnh vệ tinh</div>
+            <div class="menu-sub-item" data-layer-service="dem">Dữ liệu DEM</div>
           </div>
 
           <div class="menu-line"></div>
