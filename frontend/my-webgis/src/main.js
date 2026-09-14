@@ -29,7 +29,7 @@ import {
   BASE_LAYER_CONFIGS,
   MAP_LAYER_CONFIGS,
   RASTER_LAYER_CONFIGS,
-  LAYER_GROUP_CONFIGS // Cấu hình nhóm LayerSwitcher.
+  LAYER_GROUP_CONFIGS 
 } from './config/layers.js';
 
 import {
