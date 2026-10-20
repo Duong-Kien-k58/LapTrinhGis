@@ -56,7 +56,8 @@ export const BASE_LAYER_CONFIGS = [
     sourceType: 'XYZ',
     visible: true,
     hideWhenPrinting: true,
-    url: 'http://mt0.google.com/vt/lyrs=s&hl=en&x={x}&y={y}&z={z}'
+    sourceMaxZoom: 19,
+    url: 'https://mt0.google.com/vt/lyrs=s&hl=en&x={x}&y={y}&z={z}'
   }
   //#endregion
 ];

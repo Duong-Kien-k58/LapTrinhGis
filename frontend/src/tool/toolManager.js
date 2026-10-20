@@ -28,6 +28,7 @@ export function createToolManager({
   const selectBoxTool = createSelectBoxTool(map, layerConfigs);
   const printTool = createPrintTool(map, satelliteLayer, scaleLineControl);
   function closeToolsBeforeLocate() {
+    document.dispatchEvent(new CustomEvent('webgis-tool-activate', { detail: { name: 'geolocation' } }));
     measureTool.close();
     selectBoxTool.close();
     printTool.close();

@@ -24,6 +24,7 @@ import { escapeHTML, getConfiguredValue } from './toolUtils.js';
 export function createPopupTool({ map, layerConfigs, groupMap = {} }) {
   // Trạng thái công cụ và mã request dùng để loại bỏ request cũ.
   let active = false;
+  let dataType = 'vector';
   let requestId = 0;
   let beforeStart = function () {};
   const geojsonFormat = new GeoJSON();
@@ -88,6 +89,10 @@ export function createPopupTool({ map, layerConfigs, groupMap = {} }) {
   panel.className = 'popup-tool-panel';
   panel.innerHTML = `
     <div class="popup-tool-title">Tra cứu thông tin</div>
+    <div class="data-type-tabs" aria-label="Loại dữ liệu tra cứu">
+      <button type="button" data-identify-type="vector" class="active" aria-pressed="true">Vector</button>
+      <button type="button" data-identify-type="raster" aria-pressed="false">Raster</button>
+    </div>
     <label for="popup-layer-select">Lớp cần tra cứu</label>
     <select id="popup-layer-select"></select>
     <div id="popup-tool-status" class="popup-tool-status">
@@ -142,16 +147,28 @@ export function createPopupTool({ map, layerConfigs, groupMap = {} }) {
     if (!config?.wmsLayer) return false;
     if (!config.wmsLayer.getVisible()) return false;
 
-    const group = groupMap[config.group];
-    if (group && !group.getVisible()) return false;
-
-    return true;
+    function containsVisible(layer, parentVisible = true) {
+      const visible = parentVisible && layer.getVisible();
+      if (layer === config.wmsLayer) return visible;
+      return Boolean(layer.getLayers?.().getArray().some(child => containsVisible(child, visible)));
+    }
+    return map.getLayers().getArray().some(layer => containsVisible(layer));
   }
 
   // =========================================================
   // 7. LẤY CÁC LỚP ĐƯỢC PHÉP TRA CỨU
   // =========================================================
   function getAvailableLayers() {
+    if (dataType === 'raster') {
+      const items = [];
+      function collect(layer, parentVisible = true) {
+        const visible = parentVisible && layer.getVisible();
+        if (layer.getLayers) layer.getLayers().forEach(child => collect(child, visible));
+        else if (visible && layer.get('rasterName')) items.push({ id: layer.get('rasterName'), title: layer.get('title'), wmsLayer: layer, kind: 'raster' });
+      }
+      map.getLayers().forEach(layer => collect(layer));
+      return items;
+    }
     return layerConfigs.filter(function (config) {
       return config.hasPopup === true &&
         config.wmsLayer &&
@@ -163,7 +180,7 @@ export function createPopupTool({ map, layerConfigs, groupMap = {} }) {
   // 8. LẤY CẤU HÌNH LỚP ĐANG CHỌN TRONG COMBOBOX
   // =========================================================
   function getSelectedConfig() {
-    return layerConfigs.find(function (config) {
+    return getAvailableLayers().find(function (config) {
       return config.id === layerSelect.value;
     }) || null;
   }
@@ -400,6 +417,16 @@ export function createPopupTool({ map, layerConfigs, groupMap = {} }) {
       }
 
       // Đọc feature theo projection hiện tại để highlight không bị lệch.
+      if (config.kind === 'raster') {
+        const properties = data.features[0]?.properties || {};
+        const [longitude, latitude] = toLonLat(event.coordinate, projection);
+        popupContent.innerHTML = `<div class="popup_title">${escapeHTML(config.title)}</div><div class="popup_content">Vĩ độ: ${latitude.toFixed(6)} · Kinh độ: ${longitude.toFixed(6)}</div><table class="popup-attribute-table">${Object.entries(properties).map(([key, value]) => `<tr><td>${escapeHTML(key)}</td><td>${escapeHTML(typeof value === 'object' ? JSON.stringify(value) : value ?? 'NoData')}</td></tr>`).join('')}</table>`;
+        clearHighlight();
+        popupElement.style.display = 'block';
+        popup.setPosition(event.coordinate);
+        setStatus(`Đã đọc pixel raster: ${config.title}`);
+        return true;
+      }
       const features = geojsonFormat.readFeatures(data, {
         dataProjection: projection,
         featureProjection: projection
@@ -416,6 +443,7 @@ export function createPopupTool({ map, layerConfigs, groupMap = {} }) {
       showFeaturePopup(feature, config, event.coordinate);
       setStatus(`Đang tra cứu lớp: ${config.title}`);
     } catch (error) {
+      if (currentRequest !== requestId || !active) return true;
       console.error('Lỗi tra cứu thông tin:', error);
       closePopup();
       setStatus('Không thể đọc thông tin đối tượng');
@@ -429,11 +457,24 @@ export function createPopupTool({ map, layerConfigs, groupMap = {} }) {
   // 17. MỞ CÔNG CỤ
   // Đóng tool khác -> reset popup -> nạp lớp -> đổi con trỏ.
   // =========================================================
-  function open() {
-    if (active) return;
+  function selectDataType(type) {
+    dataType = type;
+    requestId++;
+    closePopup();
+    panel.querySelectorAll('[data-identify-type]').forEach(button => {
+      const selected = button.dataset.identifyType === type;
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+    refreshLayerOptions();
+  }
+  panel.querySelectorAll('[data-identify-type]').forEach(button => button.addEventListener('click', () => selectDataType(button.dataset.identifyType)));
+  function open(type = dataType) {
+    if (active) { selectDataType(type); return; }
 
     beforeStart();
     active = true;
+    selectDataType(type);
 
     // Xóa kết quả cũ trước khi bắt đầu lần tra cứu mới.
     closePopup();
@@ -506,6 +547,7 @@ export function createPopupTool({ map, layerConfigs, groupMap = {} }) {
   // Đóng kết quả của lớp cũ rồi cập nhật trạng thái.
   // =========================================================
   layerSelect.onchange = function () {
+    requestId++;
     closePopup();
 
     const config = getSelectedConfig();
@@ -538,6 +580,18 @@ export function createPopupTool({ map, layerConfigs, groupMap = {} }) {
       refreshLayerOptions();
     });
   });
+  const observed = new WeakSet();
+  function watchRasters(layer) {
+    if (observed.has(layer)) return;
+    observed.add(layer);
+    if (layer.getLayers) {
+      layer.getLayers().forEach(watchRasters);
+      layer.getLayers().on('add', event => { watchRasters(event.element); if (active) refreshLayerOptions(); });
+      layer.getLayers().on('remove', () => { if (active) refreshLayerOptions(); });
+    }
+    if (layer.get('rasterName') || layer.getLayers) layer.on('change:visible', () => { if (active && dataType === 'raster') refreshLayerOptions(); });
+  }
+  map.getLayers().forEach(watchRasters);
 
   // =========================================================
   // 26. CÁC HÀM CUNG CẤP CHO MAIN, SEARCH, CRUD, TOOLMANAGER

@@ -3,21 +3,57 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101923" />
     <title>Bản đồ WebGIS</title>
   </head>
   <body>
     <div class="map-wrapper">
       <!-- Bản đồ -->
       <div id="map"></div>
-      <div id="mouse-position"></div>
-      <!-- Nút đóng mở menu -->
-      <button id="menu-btn" class="menu-btn">☰</button>
+      <header class="workspace-header">
+        <button id="menu-btn" class="menu-btn" type="button" title="Menu chức năng" aria-label="Mở menu chức năng" aria-controls="side-menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <a class="workspace-brand" href="/" aria-label="WebGIS — Bản đồ">
+          <span class="brand-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m4 10 12-6 12 6-12 6-12-6Zm0 6 12 6 12-6M4 22l12 6 12-6"/></svg></span>
+          <span><strong>WebGIS<span class="brand-dot"></span></strong><small>KHÔNG GIAN ĐỊA LÝ</small></span>
+        </a>
+        <div class="header-divider"></div>
+        <div class="search-box" role="search">
+          <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
+          <input id="search-input" type="search" placeholder="Tìm địa danh, đường, đối tượng…" aria-label="Tìm kiếm trên bản đồ" autocomplete="off" />
+          <button id="search-btn" type="button" title="Tìm kiếm" aria-label="Tìm kiếm">↵</button>
+        </div>
+        <section class="map-readout" aria-label="Tọa độ và tỷ lệ bản đồ">
+          <div id="mouse-position" class="header-coordinates">
+            <div>WGS84: Vĩ độ: <output id="latitude-value">—</output>, Kinh độ: <output id="longitude-value">—</output></div>
+            <div>VN2000: X = <output id="vn2000-x-value">—</output>, Y = <output id="vn2000-y-value">—</output></div>
+          </div>
+          <div class="map-scale-row">
+            <span class="header-scale">Tỉ lệ: 1:<output id="map-scale-value">—</output></span>
+            <div class="projection-zone" role="group" aria-label="Múi chiếu tọa độ">
+              <span>Múi chiếu:</span>
+              <label><input type="radio" name="projection-zone" value="3"> 3°</label>
+              <label><input type="radio" name="projection-zone" value="6" checked> 6°</label>
+            </div>
+            <div id="header-scale-ruler" aria-label="Thước tỷ lệ"></div>
+          </div>
+        </section>
+      </header>
 
-      <!-- Ô tìm kiếm kiểu Google Maps -->
-      <div class="search-box">
-        <input id="search-input" type="text" placeholder="Tìm kiếm trên WebGIS" autocomplete="off" />
-        <button id="search-btn" title="Tìm kiếm"><svg class="search-icon" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg></button>
-      </div>
+      <nav id="right-map-tools" aria-label="Công cụ bản đồ">
+        <div id="primary-map-controls"></div>
+        <div class="map-actions">
+          <button type="button" data-tool-action="measure" title="Đo khoảng cách / diện tích" aria-label="Đo khoảng cách / diện tích"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 16 13-13 5 5L8 21zM7 12l3 3M11 8l3 3M15 4l3 3"/></svg></button>
+          <button type="button" data-tool-action="select-box" title="Chọn đối tượng bằng vùng hộp" aria-label="Chọn đối tượng bằng vùng hộp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5M3 11v2M21 11v2M11 3h2M11 21h2M10 9l8 4-4 1-1 4z"/></svg></button>
+          <button type="button" data-tool-action="print-map" title="Xuất bản đồ PDF" aria-label="Xuất bản đồ PDF"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H4V9h16v8h-3M7 14h10v7H7zM16 11h1"/></svg></button>
+          <button type="button" data-section="position" title="Tìm vị trí WGS84 / VN2000" aria-label="Tìm vị trí WGS84 / VN2000"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.5"/></svg></button>
+          <button type="button" data-section="tool-search" title="Tìm công cụ" aria-label="Tìm công cụ"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6M10 7v6"/></svg></button>
+          <button type="button" data-section="support" title="Hỗ trợ sử dụng" aria-label="Hỗ trợ sử dụng"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 8.5a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 16h.01"/></svg></button>
+        </div>
+      </nav>
+
+      <div id="workspace-toast" class="workspace-toast" role="status" aria-live="polite" hidden></div>
 
       <!-- Bảng gợi ý / kết quả tìm kiếm -->
       <div id="search-suggest-panel" class="search-suggest-panel">
@@ -28,76 +64,86 @@
       <div id="overlay" class="overlay"></div>
 
       <!-- Sidebar -->
-      <div id="side-menu" class="side-menu">
+      <aside id="side-menu" class="side-menu" aria-label="Menu chức năng" inert>
         <div class="menu-header">
-          <button id="close-menu" class="close-menu">☰</button>
-          <span>Hệ thống WebGIS</span>
+          <button id="close-menu" class="close-menu" type="button" aria-label="Đóng menu">×</button>
+          <span>Không gian làm việc<small>WebGIS · Công cụ & dữ liệu</small></span>
         </div>
 
         <div class="menu-content">
-          <!-- Nhóm thao tác bản đồ -->
-          <div class="menu-group">
-            <div class="menu-group-title">
-              <span class="menu-icon">🛠</span>
-              <span>Thao tác bản đồ</span>
-            </div>
-              <div class="menu-sub-item" data-tool-action="measure">Đo khoảng cách / diện tích</div>
-              <div class="menu-sub-item" data-tool-action="select-box">Chọn đối tượng bằng vùng hộp</div>
-              <div class="menu-sub-item" data-tool-action="print-map">Xuất bản đồ PDF</div>
-          </div>          
-
           <!-- Nhóm 1 -->
           <div class="menu-group">
-            <div class="menu-group-title">
+            <button type="button" class="menu-group-title" aria-expanded="false">
               <span class="menu-icon">⚙</span>
               <span>Quản trị dữ liệu không gian</span>
-            </div>
+            </button>
 
-            <div class="menu-sub-item" data-menu-action="add-data">Thêm dữ liệu</div>
-            <div class="menu-sub-item" data-menu-action="edit-data">Sửa dữ liệu</div>
-            <div class="menu-sub-item" data-menu-action="delete-data">Xóa dữ liệu</div>
-            <div class="menu-sub-item" data-menu-action="search-data">Tìm kiếm dữ liệu</div>
-            <div class="menu-sub-item" data-menu-action="attribute-table">Xem dữ liệu Vector</div>
-            <div class="menu-sub-item" data-menu-action="raster-data">Xem dữ liệu Raster</div>
+            <button type="button" class="menu-sub-item" data-menu-action="add-data">＋ Thêm dữ liệu vector</button>
+            <button type="button" class="menu-sub-item" data-menu-action="edit-data">✎ Sửa dữ liệu vector</button>
+            <button type="button" class="menu-sub-item" data-menu-action="delete-data">× Xóa dữ liệu vector</button>
+            <button type="button" class="menu-sub-item" data-raster-action="add-raster">＋ Thêm dữ liệu raster</button>
+            <button type="button" class="menu-sub-item" data-raster-action="edit-raster">✎ Sửa dữ liệu raster</button>
+            <button type="button" class="menu-sub-item" data-raster-action="delete-raster">× Xóa dữ liệu raster</button>
+            <button type="button" class="menu-sub-item" data-menu-action="search-data">Tìm kiếm dữ liệu</button>
+            <button type="button" class="menu-sub-item" data-menu-action="view-data">Xem dữ liệu</button>
           </div>
 
           <div class="menu-line"></div>
 
+          <div class="menu-group">
+            <button type="button" class="menu-group-title" aria-expanded="false"><span class="menu-icon">◇</span><span>Hiển thị dữ liệu vector</span></button>
+            <button type="button" class="menu-sub-item" data-section="vector-overview">Xem overview vector</button>
+            <button type="button" class="menu-sub-item" data-section="vector-identify">Xem nhanh thông tin vector</button>
+            <button type="button" class="menu-sub-item" data-section="vector-point">Trình bày dữ liệu điểm</button>
+            <button type="button" class="menu-sub-item" data-section="vector-line">Trình bày dữ liệu đường</button>
+            <button type="button" class="menu-sub-item" data-section="vector-polygon">Trình bày dữ liệu vùng</button>
+            <button type="button" class="menu-sub-item" data-section="vector-thematic">Bản đồ chuyên đề vector</button>
+          </div>
+          <div class="menu-group">
+            <button type="button" class="menu-group-title" aria-expanded="false"><span class="menu-icon">▧</span><span>Hiển thị dữ liệu raster</span></button>
+            <button type="button" class="menu-sub-item" data-section="raster-overview">Xem overview raster</button>
+            <button type="button" class="menu-sub-item" data-section="raster-identify">Xem nhanh thông tin raster</button>
+            <button type="button" class="menu-sub-item" data-section="raster-satellite">Trình bày ảnh vệ tinh</button>
+            <button type="button" class="menu-sub-item" data-section="raster-aerial">Trình bày ảnh hàng không</button>
+            <button type="button" class="menu-sub-item" data-section="raster-dem">Trình bày DEM</button>
+            <button type="button" class="menu-sub-item" data-section="raster-thematic">Trình bày raster chuyên đề</button>
+          </div>
+
           <!-- Nhóm 2 -->
           <div class="menu-group">
-            <div class="menu-group-title">
-              <span class="menu-icon">🧭</span>
+            <button type="button" class="menu-group-title" aria-expanded="false">
+              <span class="menu-icon" aria-hidden="true">◇</span>
               <span>Cung cấp dịch vụ bản đồ</span>
-            </div>
+            </button>
 
-            <div class="menu-sub-item" data-layer-service="vector">Dữ liệu vector</div>
-            <div class="menu-sub-item" data-layer-service="satellite">Dữ liệu ảnh vệ tinh</div>
-            <div class="menu-sub-item" data-layer-service="dem">Dữ liệu DEM</div>
+            <button type="button" class="menu-sub-item" data-layer-service="vector">Dữ liệu vector</button>
+            <button type="button" class="menu-sub-item" data-layer-service="satellite">Dữ liệu ảnh vệ tinh</button>
+            <button type="button" class="menu-sub-item" data-layer-service="dem">Dữ liệu DEM</button>
           </div>
 
           <div class="menu-line"></div>
 
           <!-- Nhóm 4 -->
           <div class="menu-group">
-            <div class="menu-group-title">
-              <span class="menu-icon">🎛</span>
+            <button type="button" class="menu-group-title" aria-expanded="false">
+              <span class="menu-icon" aria-hidden="true">☷</span>
               <span>Cấu hình hiển thị bản đồ</span>
-            </div>
+            </button>
 
-           <div class="menu-sub-item" data-config-action="map-config">
+           <button type="button" class="menu-sub-item" data-config-action="map-config">
               Quản trị, cấu hình hiển thị bản đồ
-            </div>
+            </button>
 
-            <div class="menu-sub-item" data-config-action="group-config">
+            <button type="button" class="menu-sub-item" data-config-action="group-config">
               Quản trị, cấu hình hiển thị nhóm bản đồ
-            </div>
+            </button>
 
-            <div class="menu-sub-item" data-config-action="layer-config">
+            <button type="button" class="menu-sub-item" data-config-action="layer-config">
               Quản trị, cấu hình hiển thị lớp
-            </div>
+            </button>
           </div>
         </div>
-      </div>
+      </aside>
 
       <!-- Popup thông tin đối tượng -->
       <div id="popup" class="ol-popup">
@@ -105,47 +151,54 @@
         <div id="popup-content"></div>
       </div>
 
-      <!-- Popup chọn lớp dữ liệu -->
-      <div id ="choose-layer-popup" class="simple-popup">
-        <div class="simple-popup-box">
-          <h3 id="choose-layer-title">Chọn lớp dữ liệu</h3>
-          <label>Chọn lớp thao tác:</label>
-          <select id="choose-layer-select"></select>
-          
-          <div class="popup-buttons">
-            <button id="choose-layer-cancel">Hủy</button>
-            <button id="choose-layer-ok">Tiếp tục</button>
-          </div>
+      <!-- Bảng biên tập không che bản đồ trong lúc vẽ/chỉnh hình học -->
+      <section id="crud-panel" class="crud-panel" aria-labelledby="crud-title">
+        <div class="crud-header">
+          <h3 id="crud-title">Biên tập dữ liệu</h3>
+          <button id="crud-close" type="button" aria-label="Đóng biên tập">×</button>
         </div>
-      </div>
-
-      <!-- Popup nhập thuộc tính sau khi vẽ -->
-       <div id="attribute-popup" class="simple-popup">
-        <div class="simple-popup-box">
-          <h3>Nhập thông tin thuộc tính</h3>
-          <div id="attribute-form"></div>
-
-          <div class="popup-buttons">
-            <button id="attribute-cancel">Hủy</button>
-            <button id="attribute-save">Lưu</button>
-          </div>
-        </div>
-       </div>
+        <label for="crud-layer">Lớp đang hiển thị</label>
+        <select id="crud-layer"></select>
+        <div class="crud-section-label">BIÊN TẬP KHÔNG GIAN</div>
+        <p id="crud-status" role="status" aria-live="polite"></p>
+        <div id="crud-workspace"></div>
+        <div id="crud-actions"></div>
+      </section>
 
        <!-- Bảng dữ liệu thuộc tính -->
-      <div id="attribute-table-panel" class="attribute-table-panel">
-        <div class="attribute-table-header">
-          <b>Bảng thuộc tính</b>
-          <label>Lớp:</label>
+      <section id="attribute-table-panel" class="attribute-table-panel data-view-panel" aria-label="Xem dữ liệu" data-data-type="vector">
+        <header class="data-view-header">
+          <b>Xem dữ liệu</b>
+          <button type="button" id="close-attribute-table" title="Đóng bảng" aria-label="Đóng bảng xem dữ liệu">×</button>
+        </header>
+        <div class="data-view-body">
+          <div class="data-type-tabs" role="group" aria-label="Loại dữ liệu">
+            <button type="button" data-table-type="vector" class="active" aria-pressed="true">Vector</button>
+            <button type="button" data-table-type="raster" aria-pressed="false">Raster</button>
+          </div>
+          <div data-vector-view>
+        <div class="attribute-table-header data-view-toolbar">
+          <label for="attribute-layer-select">Lớp:</label>
           <select id="attribute-layer-select"></select>
-
-          <button id="load-attribute-btn" title="Tải dữ liệu">Tải dữ liệu</button>
-          <button id="table-btn-add" class="table-tool-btn" title="Thêm đối tượng mới">➕ Thêm</button>
-          <button id="close-attribute-table" title="Đóng bảng">×</button>
-          
+          <input id="attribute-quick-filter" type="search" placeholder="Lọc nhanh thuộc tính…" aria-label="Lọc nhanh thuộc tính">
+          <button type="button" id="load-attribute-btn" title="Tải dữ liệu">Tải dữ liệu</button>
+          <button type="button" id="table-btn-add" class="table-tool-btn" title="Thêm đối tượng mới">＋ Thêm</button>
         </div>
+        <p id="attribute-table-status" class="data-view-hint" role="status">Chọn lớp rồi tải bảng thuộc tính.</p>
         <div id="tabulator-table"></div>
-      </div>
+          </div>
+          <div data-raster-view hidden>
+            <label class="data-view-label">Lớp raster<select id="data-raster-layer"></select></label>
+            <div class="data-view-toolbar">
+              <button type="button" id="data-raster-load">Tải lại thông tin</button>
+              <button type="button" id="data-raster-zoom">Zoom tới raster</button>
+            </div>
+            <p id="data-raster-status" class="data-view-hint" role="status"></p>
+            <div id="data-raster-details" class="data-raster-details"></div>
+            <div id="data-raster-pixel" class="data-raster-pixel" role="status">Chưa chọn điểm trên raster.</div>
+          </div>
+        </div>
+      </section>
       
     </div>
 

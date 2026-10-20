@@ -63,7 +63,9 @@ function createToggleButton() {
   container.appendChild(toggleButton);
   createThreeDButtons(container);
   const mapWrapper = document.querySelector('.map-wrapper') || document.body; // Ưu tiên gắn vào khung bản đồ
-  mapWrapper.appendChild(container);
+  const controls = document.getElementById('primary-map-controls');
+  if (controls) controls.insertBefore(container, controls.querySelector('.ol-zoom'));
+  else mapWrapper.appendChild(container);
   createInfoPanel(mapWrapper);
   toggleButton.addEventListener('click', toggle3D); // Bấm nút thì chuyển đổi giữa 2D và 3D
 }

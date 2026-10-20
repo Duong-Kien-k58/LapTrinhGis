@@ -1,475 +1,461 @@
 import { TabulatorFull as Tabulator } from 'tabulator-tables';
 import 'tabulator-tables/dist/css/tabulator.min.css';
 import Draw from 'ol/interaction/Draw.js';
+import Modify from 'ol/interaction/Modify.js';
+import Snap from 'ol/interaction/Snap.js';
 import GeoJSON from 'ol/format/GeoJSON.js';
+import MultiPoint from 'ol/geom/MultiPoint.js';
 import VectorLayer from 'ol/layer/Vector.js';
 import VectorSource from 'ol/source/Vector.js';
 import { Style, Fill, Stroke, Circle as CircleStyle } from 'ol/style.js';
 import { GEOSERVER_CONFIG, DEFAULT_ID_FIELDS } from '../config/layers.js';
 import { getConfiguredValue, getRequiredElement } from './toolUtils.js';
 
-
 export function createCrudManager({
-  map,
-  layerConfigs,
-  closeMenu = function () {},
-  highlightFeature = function () {},
-  cleanHighlight = function () {},
-  onDataChanged = function () {}
+  map, layerConfigs, closeMenu = () => {}, cleanHighlight = () => {},
+  onDataChanged = () => {}, beforeStart = () => {}
 }) {
-  const editableLayers = layerConfigs.filter(
-    config => config.editable && config.wfsLayer
-  );
-
+  const editableLayers = layerConfigs.filter(config => config.editable && config.wfsLayer);
+  const attributeLayerConfigs = layerConfigs.filter(config => config.attributeTable && config.wfsLayer);
   const geojsonFormat = new GeoJSON();
-
-  let currentAction = null;
-  let currentLayerConfig = null;
-  let drawInteraction = null;
-  let newFeature = null;
-  let editingFeature = null;
-  let deletingFeature = null;
-
-  let attributeTable = null;
-  let attributeCache = [];
-  let attributeHighlightLayer = null;
-  let attributeAddMode = false;
-
-  const chooseLayerPopup = getRequiredElement('choose-layer-popup');
-  const chooseLayerTitle = getRequiredElement('choose-layer-title');
-  const chooseLayerSelect = getRequiredElement('choose-layer-select');
-  const chooseLayerCancel = getRequiredElement('choose-layer-cancel');
-  const chooseLayerOk = getRequiredElement('choose-layer-ok');
-
-  const attributePopup = getRequiredElement('attribute-popup');
-  const attributeForm = getRequiredElement('attribute-form');
-  const attributeCancel = getRequiredElement('attribute-cancel');
-  const attributeSave = getRequiredElement('attribute-save');
-
+  const panel = getRequiredElement('crud-panel');
+  const title = getRequiredElement('crud-title');
+  const layerSelect = getRequiredElement('crud-layer');
+  const status = getRequiredElement('crud-status');
+  const workspace = getRequiredElement('crud-workspace');
+  const actions = getRequiredElement('crud-actions');
+  const closeButton = getRequiredElement('crud-close');
   const attributeTablePanel = getRequiredElement('attribute-table-panel');
   const attributeLayerSelect = getRequiredElement('attribute-layer-select');
   const loadAttributeBtn = getRequiredElement('load-attribute-btn');
   const closeAttributeTableBtn = getRequiredElement('close-attribute-table');
   const tableAddBtn = getRequiredElement('table-btn-add');
+  const sketchSource = new VectorSource();
+  const vertexStyle = new Style({
+    geometry: feature => {
+      const collect = coords => typeof coords[0] === 'number' ? [coords] : coords.flatMap(collect);
+      return new MultiPoint(collect(feature.getGeometry().getCoordinates()));
+    },
+    image: new CircleStyle({ radius: 6, fill: new Fill({ color: '#22d3ee' }),
+      stroke: new Stroke({ color: '#fff', width: 2 }) })
+  });
+  const sketchStyle = new Style({
+    fill: new Fill({ color: 'rgba(255, 221, 0, .25)' }),
+    stroke: new Stroke({ color: '#ef4444', width: 3 }),
+    image: new CircleStyle({ radius: 8, fill: new Fill({ color: '#ffdd00' }),
+      stroke: new Stroke({ color: '#ef4444', width: 2 }) })
+  });
+  const sketchLayer = new VectorLayer({ source: sketchSource, zIndex: 10000,
+    style: () => modifyInteraction ? [sketchStyle, vertexStyle] : sketchStyle });
+  map.addLayer(sketchLayer);
 
-  const attributeLayerConfigs = layerConfigs.filter(
-    config => config.attributeTable && config.wfsLayer
-  );
+  let currentAction = null;
+  let currentLayerConfig = null;
+  let selectedFeature = null;
+  let drawInteraction = null;
+  let modifyInteraction = null;
+  let snapInteraction = null;
+  let geometryChanged = false;
+  let isSelecting = false;
+  let isSaving = false;
+  let selectionRequest = null;
+  let snapRequest = null;
+  let hiddenWmsFeature = null;
+  let attributeTable = null;
+  let attributeCache = [];
+  let attributeHighlightLayer = null;
+  let attributeAddMode = false;
+  let attributeRequestVersion = 0;
+  let attributeKeyword = '';
+  const attributeStatus = document.getElementById('attribute-table-status');
+  const attributeFilter = document.getElementById('attribute-quick-filter');
+  function setAttributeStatus(message) { if (attributeStatus) attributeStatus.textContent = message; }
+  function applyAttributeFilter() {
+    attributeTable?.setFilter(row => Object.entries(row).some(([key, value]) => !key.startsWith('__') && String(value ?? '').toLocaleLowerCase('vi-VN').includes(attributeKeyword)));
+  }
+  attributeFilter?.addEventListener('input', () => {
+    attributeKeyword = attributeFilter.value.trim().toLocaleLowerCase('vi-VN');
+    applyAttributeFilter();
+  });
+
+  function setStatus(message, error = false) {
+    status.textContent = message;
+    status.classList.toggle('error', error);
+  }
+
+  function button(label, handler, danger = false) {
+    const element = document.createElement('button');
+    element.type = 'button';
+    element.textContent = label;
+    element.classList.toggle('danger', danger);
+    element.addEventListener('click', handler);
+    return element;
+  }
 
   function isMissingId(value) {
     return value === null || value === undefined || value === '';
+  }
+
+  function getFeatureId(feature, config) {
+    const value = getConfiguredValue(feature, config.idFields || DEFAULT_ID_FIELDS, null);
+    if (!isMissingId(value)) return value;
+    const id = feature.getId();
+    if (isMissingId(id)) return null;
+    return String(id).split('.').at(-1);
   }
 
   async function requestJson(url, options = {}) {
     const response = await fetch(url, options);
     const text = await response.text();
     let data = {};
-
-    if (text) {
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = { message: text };
-      }
-    }
-
+    try { data = text ? JSON.parse(text) : {}; }
+    catch { throw new Error(`Máy chủ trả dữ liệu không hợp lệ (HTTP ${response.status})`); }
     if (!response.ok || data.success === false) {
-      throw new Error(
-        data.message || `Backend trả về lỗi HTTP ${response.status}`
-      );
+      throw new Error(data.message || `HTTP ${response.status}`);
     }
-
     return data;
   }
 
   function getBackendUrl(config, suffix) {
-    const baseUrl = GEOSERVER_CONFIG.backendUrl.replace(/\/+$/, '');
-    const apiName = encodeURIComponent(config.apiName || config.id);
-    return `${baseUrl}/${apiName}/${suffix}`;
+    return `${GEOSERVER_CONFIG.backendUrl.replace(/\/+$/, '')}/${encodeURIComponent(config.apiName || config.id)}/${suffix}`;
   }
 
-  function addFeatureToBackend(config, geojson) {
-    return requestJson(getBackendUrl(config, 'add/'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geojson)
-    });
-  }
-
-  function editFeatureOnBackend(config, featureId, geojson) {
-    const suffix = `${encodeURIComponent(featureId)}/edit/`;
-    return requestJson(getBackendUrl(config, suffix), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geojson)
-    });
-  }
-
-  function deleteFeatureFromBackend(config, featureId) {
-    const suffix = `${encodeURIComponent(featureId)}/delete/`;
-    return requestJson(getBackendUrl(config, suffix), {
-      method: 'DELETE'
-    });
-  }
-
-  function featureToGeoJSON(feature) {
-    return geojsonFormat.writeFeatureObject(feature, {
-      featureProjection: map.getView().getProjection(),
-      dataProjection: 'EPSG:4326'
-    });
-  }
-
-  function getFeatureId(feature, config) {
-    const value = getConfiguredValue(
-      feature,
-      config.idFields || DEFAULT_ID_FIELDS,
-      null
-    );
-
-    if (!isMissingId(value)) return value;
-
-    const featureId = feature.getId();
-    if (isMissingId(featureId)) return null;
-
-    const parts = String(featureId).split('.');
-    return parts.length === 2 ? parts[1] : featureId;
-  }
-
-  function findFeatureInCurrentLayer(coordinate) {
-    if (!currentLayerConfig?.wfsLayer) return null; // Chưa chọn WFS.
-    const source = currentLayerConfig.wfsLayer.getSource(); // Lấy source WFS.
-    const features = source.getFeaturesAtCoordinate(coordinate); // Tìm feature tại tọa độ click.
-    return features[0] || null; // Lấy đối tượng đầu tiên.
+  // Tính cả trạng thái nhóm cha; WFS ẩn chỉ phục vụ đọc, không quyết định lớp đang bật.
+  function isLayerVisible(config) {
+    function containsVisible(collection, parentVisible = true) {
+      return collection.getArray().some(layer => {
+        const visible = parentVisible && layer.getVisible();
+        if (layer === config.wmsLayer) return visible;
+        return layer.getLayers ? containsVisible(layer.getLayers(), visible) : false;
+      });
+    }
+    return containsVisible(map.getLayers());
   }
 
   function stopDrawInteraction() {
-    if (!drawInteraction) return;
-    map.removeInteraction(drawInteraction);
-    drawInteraction = null;
+    snapRequest?.abort();
+    snapRequest = null;
+    [drawInteraction, modifyInteraction, snapInteraction].forEach(interaction => {
+      if (interaction) map.removeInteraction(interaction);
+    });
+    drawInteraction = modifyInteraction = snapInteraction = null;
+    sketchLayer.changed();
+    map.getTargetElement().style.cursor = '';
+  }
+
+  function restoreWms() {
+    if (!hiddenWmsFeature) return;
+    hiddenWmsFeature.source.updateParams({
+      CQL_FILTER: hiddenWmsFeature.filter || 'INCLUDE', _reload: Date.now()
+    });
+    hiddenWmsFeature = null;
+  }
+
+  function hideOriginalFromWms() {
+    if (hiddenWmsFeature || !selectedFeature) return;
+    const source = currentLayerConfig.wmsLayer?.getSource();
+    const id = getFeatureId(selectedFeature, currentLayerConfig);
+    const idField = (currentLayerConfig.idFields || DEFAULT_ID_FIELDS)[0];
+    if (!source?.updateParams || !/^\d+$/.test(String(id)) || !/^\w+$/.test(idField)) return;
+    const filter = source.getParams().CQL_FILTER;
+    const exclusion = `${idField} <> ${id}`;
+    hiddenWmsFeature = { source, filter };
+    source.updateParams({ CQL_FILTER: filter ? `(${filter}) AND (${exclusion})` : exclusion });
+  }
+
+  function clearWorkspace() {
+    selectionRequest?.abort();
+    selectionRequest = null;
+    stopDrawInteraction();
+    restoreWms();
+    selectedFeature = null;
+    geometryChanged = false;
+    isSelecting = false;
+    sketchSource.clear();
+    clearAttributeHighlight();
+    cleanHighlight();
+    workspace.replaceChildren();
+    actions.replaceChildren();
   }
 
   function resetCrudState() {
+    if (isSaving) return;
+    clearWorkspace();
     currentAction = null;
     currentLayerConfig = null;
-    newFeature = null;
-    editingFeature = null;
-    deletingFeature = null;
-    stopDrawInteraction();
-    map.getTargetElement().style.cursor = '';
+    panel.classList.remove('active');
+    document.querySelectorAll('.workspace-tools button').forEach(button => {
+      button.classList.remove('is-active');
+      button.setAttribute('aria-pressed', 'false');
+    });
     updateAttributeAddButton(false);
   }
 
-  function refreshLayer(config) {
-    const source = config?.wfsLayer?.getSource();
-    if (!source) return;
-    source.clear(true);
-    source.refresh();
-  }
-
-  function refreshAllMapLayers() {
-    layerConfigs.forEach(function (config) {
-      const wfsSource = config.wfsLayer?.getSource();
-      if (wfsSource) {
-        wfsSource.clear(true);
-        wfsSource.refresh();
+  function renderStart() {
+    clearWorkspace();
+    actions.replaceChildren(button(currentAction === 'add' ? 'Bắt đầu vẽ' : 'Bắt đầu chọn', () => {
+      if (currentAction === 'add') startAdd();
+      else {
+        isSelecting = true;
+        map.getTargetElement().style.cursor = 'crosshair';
+        setStatus('Nhấp vào đối tượng trên bản đồ.');
       }
-
-      const wmsSource = config.wmsLayer?.getSource();
-      if (wmsSource?.updateParams) {
-        wmsSource.updateParams({ _reload: Date.now() });
-      }
-    });
+    }), button('Hủy', resetCrudState));
+    actions.firstChild.disabled = !currentLayerConfig;
+    setStatus(currentLayerConfig ? 'Chọn lớp rồi bắt đầu thao tác.' : 'Hãy bật một lớp có thể biên tập trong danh sách lớp.', !currentLayerConfig);
   }
 
-  function refreshAfterCrud(config) {
-    refreshAllMapLayers(); // Làm mới dữ liệu bản đồ.
-    onDataChanged(config); // Làm mới Search.
-    reloadAttributeTableAfterCrud(config); // Làm mới bảng thuộc tính.
-  }
-
-  function openChooseLayerPopup(action) {
-    currentAction = action;
-
-    const titles = {
-      add: 'Chọn lớp để thêm đối tượng',
-      edit: 'Chọn lớp để sửa đối tượng',
-      delete: 'Chọn lớp để xóa đối tượng'
-    };
-
-    chooseLayerTitle.innerText = titles[action] || 'Chọn lớp dữ liệu';
-    chooseLayerSelect.innerHTML = '';
-
-    editableLayers.forEach(function (config) {
+  function renderLayerOptions(preferred) {
+    layerSelect.replaceChildren();
+    editableLayers.filter(isLayerVisible).forEach(config => {
       const option = document.createElement('option');
       option.value = config.id;
-      option.innerText = `${config.title} - ${config.geometryType}`;
-      chooseLayerSelect.appendChild(option);
+      option.textContent = `${config.title} (${config.geometryType})`;
+      layerSelect.appendChild(option);
     });
-
-    chooseLayerPopup.classList.add('active');
+    if ([...layerSelect.options].some(option => option.value === preferred)) layerSelect.value = preferred;
+    layerSelect.disabled = !layerSelect.options.length;
+    currentLayerConfig = editableLayers.find(config => config.id === layerSelect.value) || null;
   }
 
-  function closeChooseLayerPopup() {
-    chooseLayerPopup.classList.remove('active');
+  function openChooseLayerPopup(action, config = null) {
+    if (isSaving) return;
+    document.dispatchEvent(new CustomEvent('webgis-tool-activate', {
+      detail: { name: 'crud', preserveDataTool: attributeTablePanel.classList.contains('active') ? 'data-view' : undefined }
+    }));
+    beforeStart();
+    resetCrudState();
+    currentAction = action;
+    panel.dataset.action = action;
+    const quickButton = document.querySelector(`.workspace-tools [data-menu-action="${action}-data"]`);
+    quickButton?.classList.add('is-active');
+    quickButton?.setAttribute('aria-pressed', 'true');
+    title.textContent = { add: 'Thêm đối tượng', edit: 'Sửa đối tượng', delete: 'Xóa đối tượng' }[action];
+    renderLayerOptions(config?.id);
+    panel.classList.add('active');
+    renderStart();
   }
 
-  function createInputField(field, value = '') {
-    const label = document.createElement('label');
-    label.innerText = field.label;
-
-    const input = document.createElement('input');
-    input.type = field.type || 'text';
-    input.name = field.name;
-    input.value = value ?? '';
-
-    attributeForm.append(label, input);
-  }
-
-  function openAddAttributePopup() {
-    if (!currentLayerConfig) {
-      alert('Chưa chọn lớp dữ liệu');
-      return;
-    }
-
-    attributeForm.innerHTML = '';
-    (currentLayerConfig.editFields || []).forEach(createInputField);
-    attributePopup.classList.add('active');
-  }
-
-  function openEditAttributePopup() {
-    if (!currentLayerConfig || !editingFeature) {
-      alert('Chưa chọn đối tượng để sửa');
-      return;
-    }
-
-    attributeForm.innerHTML = '';
-    (currentLayerConfig.editFields || []).forEach(function (field) {
-      createInputField(field, editingFeature.get(field.name));
+  function renderPropertyForm() {
+    workspace.replaceChildren();
+    const form = document.createElement('form');
+    form.id = 'crud-property-form';
+    (currentLayerConfig.editFields || []).forEach(field => {
+      const label = document.createElement('label');
+      label.textContent = field.label;
+      const input = document.createElement('input');
+      input.name = field.name;
+      input.type = field.type || 'text';
+      input.value = selectedFeature?.get(field.name) ?? '';
+      input.required = Boolean(field.required);
+      if (field.type === 'number') input.step = 'any';
+      label.appendChild(input);
+      form.appendChild(label);
     });
-    attributePopup.classList.add('active');
+    form.addEventListener('submit', event => { event.preventDefault(); saveFeature(); });
+    workspace.appendChild(form);
+    const save = button('Lưu thay đổi', saveFeature);
+    actions.replaceChildren(save, button('Hủy', resetCrudState));
   }
 
-  function closeAttributePopup() {
-    attributePopup.classList.remove('active');
-  }
-
-  function startAdd() {
-    if (!currentLayerConfig) {
-      alert('Bạn chưa chọn lớp');
-      return;
-    }
-
+  function startAdd(replace = false) {
+    if (!currentLayerConfig || !isLayerVisible(currentLayerConfig)) return;
     stopDrawInteraction();
-    alert('Bây giờ hãy vẽ đối tượng trên bản đồ');
-
-    drawInteraction = new Draw({
-      source: currentLayerConfig.wfsLayer.getSource(),
-      type: currentLayerConfig.geometryType
-    });
-
+    isSelecting = false;
+    if (replace) {
+      workspace.querySelectorAll('input').forEach(input => selectedFeature.set(input.name, input.value));
+      hideOriginalFromWms();
+    }
+    workspace.replaceChildren();
+    actions.replaceChildren(button('Hủy', resetCrudState));
+    drawInteraction = new Draw({ type: currentLayerConfig.geometryType });
     map.addInteraction(drawInteraction);
-
-    drawInteraction.on('drawend', function (event) {
-      newFeature = event.feature;
+    // Dùng dữ liệu sẵn có trước, bổ sung WFS ngầm khi bắt đầu vẽ mới.
+    const snapFeatures = currentLayerConfig.wfsLayer.getSource().getFeatures();
+    const snapSource = new VectorSource({ features: replace ? [selectedFeature] : snapFeatures });
+    snapInteraction = new Snap({ source: snapSource, pixelTolerance: 16 });
+    map.addInteraction(snapInteraction);
+    map.getTargetElement().style.cursor = 'crosshair';
+    setStatus(replace ? 'Vẽ hình thay thế; nhấp đúp để kết thúc.' : 'Nhấp để vẽ; đường và vùng kết thúc bằng nhấp đúp. Có thể bắt dính vào dữ liệu đã tải.');
+    if (!replace) loadSnapFeatures(snapSource, currentLayerConfig, drawInteraction);
+    drawInteraction.once('drawend', event => {
       stopDrawInteraction();
-      openAddAttributePopup();
+      if (replace) selectedFeature.setGeometry(event.feature.getGeometry().clone());
+      else selectedFeature = event.feature;
+      geometryChanged = true;
+      sketchSource.clear();
+      sketchSource.addFeature(selectedFeature);
+      renderPropertyForm();
+      setStatus('Kiểm tra thuộc tính rồi lưu thay đổi.');
     });
   }
 
-  function cancelAdd() {
-    if (newFeature && currentLayerConfig?.wfsLayer) {
-      currentLayerConfig.wfsLayer.getSource().removeFeature(newFeature);
-    }
-    resetCrudState();
-  }
-
-  function startEdit() {
-    if (!currentLayerConfig) {
-      alert('Bạn chưa chọn lớp');
-      return;
-    }
-    alert('Hãy click vào đối tượng cần sửa trên bản đồ');
-  }
-
-  function handleEditClick(event) {
-    const feature = findFeatureInCurrentLayer(event.coordinate);
-
-    if (!feature) {
-      alert('Không tìm thấy đối tượng thuộc lớp đã chọn');
-      return;
-    }
-
-    editingFeature = feature;
-    highlightFeature(feature);
-    openEditAttributePopup();
-  }
-
-  function cancelEdit() {
-    editingFeature = null;
-    cleanHighlight();
-    resetCrudState();
-  }
-
-  function startDelete() {
-    if (!currentLayerConfig) {
-      alert('Bạn chưa chọn lớp');
-      return;
-    }
-    alert('Hãy click vào đối tượng cần xóa trên bản đồ');
-  }
-
-  async function saveAddAttributes(inputs) {
-    if (!newFeature || !currentLayerConfig) {
-      alert('Chưa có đối tượng mới để lưu');
-      return;
-    }
-
-    const feature = newFeature;
-    const config = currentLayerConfig;
-
-    inputs.forEach(input => feature.set(input.name, input.value));
-
+  async function loadSnapFeatures(source, config, interaction) {
+    const rawUrl = getAttributeUrl(config);
+    if (!rawUrl) return;
+    const url = new URL(rawUrl);
+    url.searchParams.set('maxFeatures', '5000');
+    url.searchParams.set('srsName', 'EPSG:4326');
+    const controller = new AbortController();
+    snapRequest = controller;
     try {
-      await addFeatureToBackend(config, featureToGeoJSON(feature));
-      alert('Đã lưu đối tượng vào database');
-      closeAttributePopup();
-      cleanHighlight();
-      clearAttributeHighlight();
-      refreshAfterCrud(config);
-      resetCrudState();
+      const data = await requestJson(url, { signal: controller.signal });
+      if (drawInteraction !== interaction || controller.signal.aborted) return;
+      const features = geojsonFormat.readFeatures(data, {
+        dataProjection: geojsonFormat.readProjection(data) || 'EPSG:4326',
+        featureProjection: map.getView().getProjection()
+      });
+      source.clear();
+      source.addFeatures(features);
+      setStatus(`Vẽ đối tượng mới; nhấp đúp để kết thúc đường/vùng. Bắt dính vào ${features.length} đối tượng trong lớp.`);
     } catch (error) {
-      console.error('Lỗi thêm đối tượng:', error);
-      config.wfsLayer.getSource().removeFeature(feature);
-      closeAttributePopup();
-      cleanHighlight();
-      clearAttributeHighlight();
-      resetCrudState();
-      alert('Lỗi thêm dữ liệu: ' + error.message);
+      if (error.name !== 'AbortError' && drawInteraction === interaction) {
+        setStatus('Không tải được dữ liệu bắt dính. Bạn vẫn có thể tiếp tục vẽ.', true);
+      }
     }
   }
 
-  async function saveEditAttributes(inputs) {
-    if (!editingFeature || !currentLayerConfig) {
-      alert('Chưa chọn đối tượng để sửa');
-      return;
+  function startGeometryEditing() {
+    stopDrawInteraction();
+    hideOriginalFromWms();
+    clearAttributeHighlight();
+    renderPropertyForm();
+    modifyInteraction = new Modify({ source: sketchSource, pixelTolerance: 16 });
+    map.addInteraction(modifyInteraction);
+    if (currentLayerConfig.geometryType !== 'Point') {
+      snapInteraction = new Snap({ source: sketchSource, pixelTolerance: 16 });
+      map.addInteraction(snapInteraction);
+      actions.appendChild(button('Vẽ hình thay thế', () => startAdd(true)));
     }
-
-    const feature = editingFeature;
-    const config = currentLayerConfig;
-    const oldValues = {};
-
-    inputs.forEach(function (input) {
-      oldValues[input.name] = feature.get(input.name);
-      feature.set(input.name, input.value);
+    modifyInteraction.on('modifyend', () => {
+      geometryChanged = true;
+      setStatus('Đã chỉnh hình học. Có thể tiếp tục kéo hoặc lưu thay đổi.');
     });
+    sketchLayer.changed();
+    map.getTargetElement().style.cursor = 'move';
+    setStatus(currentLayerConfig.geometryType === 'Point'
+      ? 'Kéo nút cyan để di chuyển điểm rồi lưu.' : 'Kéo đỉnh/cạnh để sửa hình học; giữ Alt và nhấp đỉnh để bỏ đỉnh.');
+  }
 
-    const featureId = getFeatureId(feature, config);
-
-    if (isMissingId(featureId)) {
-      restoreFeatureValues(feature, oldValues);
-      alert('Không tìm thấy ID đối tượng để sửa');
-      return;
-    }
-
-    try {
-      await editFeatureOnBackend(
-        config,
-        featureId,
-        featureToGeoJSON(feature)
-      );
-
-      alert('Đã sửa dữ liệu trong database');
-      closeAttributePopup();
-      cleanHighlight();
-      clearAttributeHighlight();
-      refreshAfterCrud(config);
-      resetCrudState();
-    } catch (error) {
-      console.error('Lỗi sửa đối tượng:', error);
-      restoreFeatureValues(feature, oldValues);
-      refreshLayer(config);
-      closeAttributePopup();
-      cleanHighlight();
-      clearAttributeHighlight();
-      resetCrudState();
-      alert('Lỗi sửa dữ liệu: ' + error.message);
+  function chooseFeature(feature) {
+    selectionRequest?.abort();
+    selectionRequest = null;
+    map.getTargetElement().style.cursor = '';
+    // Chỉnh trên bản sao để Hủy luôn giữ nguyên dữ liệu gốc và bảng thuộc tính.
+    selectedFeature = feature.clone();
+    selectedFeature.setId(feature.getId());
+    isSelecting = false;
+    sketchSource.clear();
+    sketchSource.addFeature(selectedFeature);
+    workspace.replaceChildren();
+    actions.replaceChildren();
+    if (currentAction === 'delete') {
+      setStatus('Đã chọn đối tượng. Kiểm tra hình được tô sáng trước khi xác nhận xóa.');
+      actions.append(button('Xác nhận xóa', saveFeature, true), button('Hủy', resetCrudState));
+    } else {
+      setStatus('Chọn cách sửa đối tượng.');
+      actions.append(button('Sửa thuộc tính', () => {
+        renderPropertyForm();
+        setStatus('Sửa thuộc tính rồi lưu thay đổi.');
+      }), button(currentLayerConfig.geometryType === 'Point' ? 'Di chuyển điểm' : 'Sửa hình học', startGeometryEditing), button('Hủy', resetCrudState));
     }
   }
 
-  function restoreFeatureValues(feature, values) {
-    Object.entries(values).forEach(function ([field, value]) {
-      feature.set(field, value);
-    });
-  }
-
-  async function deleteFeatureWithConfirm(feature) {
-    if (!feature || !currentLayerConfig) {
-      alert('Chưa chọn đối tượng để xóa');
-      return;
-    }
-
-    deletingFeature = feature;
-    highlightFeature(feature);
-
-    if (!confirm('Bạn có chắc chắn muốn xóa đối tượng này không?')) {
-      cleanHighlight();
-      clearAttributeHighlight();
-      deletingFeature = null;
-      return;
-    }
-
+  async function selectFeatureFromMap(coordinate) {
     const config = currentLayerConfig;
-    const featureId = getFeatureId(feature, config);
-    
-    if (isMissingId(featureId)) {
-      alert('Không tìm thấy ID đối tượng để xóa');
-      cleanHighlight();
-      clearAttributeHighlight();
-      deletingFeature = null;
-      return;
-    }
-
+    if (!config || !isLayerVisible(config)) return;
+    selectionRequest?.abort();
+    const controller = new AbortController();
+    selectionRequest = controller;
+    setStatus('Đang tìm đối tượng tại vị trí đã chọn…');
     try {
-      await deleteFeatureFromBackend(config, featureId);
-      alert('Đã xóa dữ liệu trong database');
-      cleanHighlight();
-      clearAttributeHighlight();
-      refreshAfterCrud(config);
-      resetCrudState();
+      const view = map.getView();
+      const url = config.wmsLayer.getSource().getFeatureInfoUrl(coordinate, view.getResolution(), view.getProjection(), {
+        INFO_FORMAT: 'application/json', FEATURE_COUNT: 20, BUFFER: 8
+      });
+      if (!url) throw new Error('Không tạo được yêu cầu GetFeatureInfo');
+      const data = await requestJson(url, { signal: controller.signal });
+      if (selectionRequest !== controller) return;
+      const crs = data.crs?.properties?.name;
+      const epsg = String(crs || '').match(/EPSG(?::|::)(\d+)$/i);
+      const features = geojsonFormat.readFeatures(data, {
+        dataProjection: epsg ? `EPSG:${epsg[1]}` : view.getProjection(),
+        featureProjection: view.getProjection()
+      }).filter(feature => feature.getGeometry() && !isMissingId(getFeatureId(feature, config)));
+      workspace.replaceChildren();
+      if (!features.length) {
+        setStatus('Không tìm thấy đối tượng. Hãy nhấp vị trí khác.', true);
+        return;
+      }
+      features.forEach(feature => {
+        const name = (config.editFields || []).map(field => feature.get(field.name)).find(value => !isMissingId(value));
+        workspace.appendChild(button(`${name || config.title} (#${getFeatureId(feature, config)})`, () => chooseFeature(feature)));
+      });
+      setStatus(`Tìm thấy ${features.length} đối tượng. Chọn đối tượng trong danh sách hoặc nhấp vị trí khác.`);
     } catch (error) {
-      console.error('Lỗi xóa đối tượng:', error);
-      cleanHighlight();
-      clearAttributeHighlight();
-      resetCrudState();
-      alert('Lỗi xóa dữ liệu: ' + error.message);
+      if (error.name !== 'AbortError') setStatus(`Không đọc được đối tượng: ${error.message}`, true);
     }
-  }
-
-  function handleDeleteClick(event) {
-    const feature = findFeatureInCurrentLayer(event.coordinate);
-
-    if (!feature) {
-      alert('Không tìm thấy đối tượng thuộc lớp đã chọn');
-      return;
-    }
-
-    deleteFeatureWithConfirm(feature);
   }
 
   function handleMapClick(event) {
-    if (drawInteraction || currentAction === 'add') return true;
+    if (!currentAction) return false;
+    if (isSelecting && !isSaving) selectFeatureFromMap(event.coordinate);
+    return true;
+  }
 
-    if (currentAction === 'edit') {
-      handleEditClick(event);
-      return true;
+  function refreshAfterCrud(config) {
+    const source = config.wfsLayer.getSource();
+    source.clear(true);
+    source.refresh();
+    config.wmsLayer?.getSource()?.updateParams({ _reload: Date.now() });
+    onDataChanged(config);
+    reloadAttributeTableAfterCrud(config);
+  }
+
+  async function saveFeature() {
+    if (isSaving || !selectedFeature || !currentLayerConfig) return;
+    const config = currentLayerConfig;
+    if (!isLayerVisible(config)) { setStatus('Lớp đang thao tác đã tắt.', true); return; }
+    const form = workspace.querySelector('form');
+    if (form && !form.reportValidity()) return;
+    const id = getFeatureId(selectedFeature, config);
+    if (currentAction !== 'add' && isMissingId(id)) { setStatus('Không xác định được mã đối tượng.', true); return; }
+    if (currentAction === 'delete' && !confirm('Bạn có chắc chắn muốn xóa đối tượng đã chọn?')) return;
+    const properties = {};
+    form?.querySelectorAll('input').forEach(input => { properties[input.name] = input.value; });
+    const payload = { type: 'Feature', properties };
+    // Sửa thuộc tính không gửi geometry từ GetFeatureInfo về PostGIS.
+    if (currentAction === 'add' || geometryChanged) {
+      payload.geometry = geojsonFormat.writeFeatureObject(selectedFeature, {
+        featureProjection: map.getView().getProjection(), dataProjection: 'EPSG:4326'
+      }).geometry;
     }
-
-    if (currentAction === 'delete') {
-      handleDeleteClick(event);
-      return true;
+    const action = currentAction;
+    const suffix = action === 'add' ? 'add/' : `${encodeURIComponent(id)}/${action}/`;
+    stopDrawInteraction();
+    isSaving = true;
+    panel.classList.add('is-busy');
+    panel.setAttribute('aria-busy', 'true');
+    panel.querySelectorAll('button, input, select').forEach(element => { element.disabled = true; });
+    setStatus('Đang lưu thay đổi…');
+    try {
+      await requestJson(getBackendUrl(config, suffix), {
+        method: { add: 'POST', edit: 'PUT', delete: 'DELETE' }[action],
+        ...(action === 'delete' ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      });
+      restoreWms();
+      window.dispatchEvent(new CustomEvent('webgis-data-saved', { detail: { action, layerTitle: config.title } }));
+      isSaving = false;
+      resetCrudState();
+      refreshAfterCrud(config);
+    } catch (error) {
+      setStatus(`Không lưu được: ${error.message}. Bạn có thể thử lưu lại hoặc hủy.`, true);
+    } finally {
+      isSaving = false;
+      panel.classList.remove('is-busy');
+      panel.setAttribute('aria-busy', 'false');
+      panel.querySelectorAll('button, input, select').forEach(element => { element.disabled = false; });
     }
-
-    return false;
   }
 
   function renderAttributeLayerOptions() {
@@ -496,18 +482,6 @@ export function createCrudManager({
     ) || null;
   }
 
-  function setCrudLayerFromAttributeTable() {
-    const config = getCurrentAttributeConfig();
-
-    if (!config?.editable) {
-      alert('Lớp này chưa được cấu hình để thêm / sửa / xóa');
-      return null;
-    }
-
-    currentLayerConfig = config;
-    return config;
-  }
-
   function updateAttributeAddButton(active) {
     attributeAddMode = active;
     tableAddBtn.classList.toggle('active', active);
@@ -518,16 +492,25 @@ export function createCrudManager({
   }
 
   function openAttributeTable() {
+    attributeRequestVersion++;
+    attributeCache = [];
+    attributeKeyword = '';
+    if (attributeFilter) attributeFilter.value = '';
+    setAttributeStatus('Chọn lớp rồi tải bảng thuộc tính.');
+    attributeTable?.clearData();
     renderAttributeLayerOptions();
+    tableAddBtn.disabled = !getCurrentAttributeConfig()?.editable;
     attributeTablePanel.classList.add('active');
   }
 
   function closeAttributeTable() {
+    attributeRequestVersion++;
+    attributeCache = [];
     attributeTablePanel.classList.remove('active');
     clearAttributeHighlight();
 
     if (attributeTable) attributeTable.clearData();
-    if (currentAction === 'add') cancelAdd();
+    if (!isSaving) resetCrudState();
   }
 
   function clearAttributeHighlight() {
@@ -609,54 +592,43 @@ export function createCrudManager({
   }
 
   function editAttributeRow(rowData) {
-    const config = setCrudLayerFromAttributeTable();
-    const feature = getFeatureFromAttributeRow(rowData);
-
-    if (!config || !feature) {
-      if (!feature) alert('Không tìm thấy đối tượng để sửa');
-      return;
-    }
-
-    currentAction = 'edit';
-    editingFeature = feature;
-    zoomToAttributeFeature(rowData);
-    highlightFeature(feature);
-    openEditAttributePopup();
+    openFromTable('edit', rowData);
   }
 
   function deleteAttributeRow(rowData) {
-    const config = setCrudLayerFromAttributeTable();
-    const feature = getFeatureFromAttributeRow(rowData);
+    openFromTable('delete', rowData);
+  }
 
-    if (!config || !feature) {
-      if (!feature) alert('Không tìm thấy đối tượng để xóa');
+  function openFromTable(action, rowData) {
+    if (isSaving) return;
+    const config = getCurrentAttributeConfig();
+    const feature = getFeatureFromAttributeRow(rowData);
+    if (!config?.editable || !feature) return;
+    if (!isLayerVisible(config)) {
+      alert('Hãy bật lớp dữ liệu trước khi thao tác.');
       return;
     }
-
-    currentAction = 'delete';
-    deletingFeature = feature;
+    openChooseLayerPopup(action, config);
     zoomToAttributeFeature(rowData);
-    highlightFeature(feature);
-    deleteFeatureWithConfirm(feature);
+    chooseFeature(feature);
   }
 
   function addAttributeRow() {
+    if (isSaving) return;
     if (currentAction === 'add' && attributeAddMode) {
-      cancelAdd();
-      closeAttributePopup();
-      clearAttributeHighlight();
-      cleanHighlight();
+      resetCrudState();
       return;
     }
-
-    const config = setCrudLayerFromAttributeTable();
-    if (!config) return;
-
-    cleanHighlight();
-    clearAttributeHighlight();
-    stopDrawInteraction();
-    currentAction = 'add';
-    newFeature = null;
+    const config = getCurrentAttributeConfig();
+    if (!config?.editable) {
+      alert('Lớp này chưa được cấu hình để thêm / sửa / xóa');
+      return;
+    }
+    if (!isLayerVisible(config)) {
+      alert('Hãy bật lớp dữ liệu trước khi thao tác.');
+      return;
+    }
+    openChooseLayerPopup('add', config);
     updateAttributeAddButton(true);
     startAdd();
   }
@@ -682,8 +654,8 @@ export function createCrudManager({
         return `
           <div class="table-row-actions">
             <button class="table-row-btn view" data-row-action="view" title="Xem đối tượng">Xem</button>
-            <button class="table-row-btn edit" data-row-action="edit" title="Sửa đối tượng">Sửa</button>
-            <button class="table-row-btn delete" data-row-action="delete" title="Xóa đối tượng">Xóa</button>
+            <button ${config.editable ? '' : 'disabled'} class="table-row-btn edit" data-row-action="edit" title="Sửa đối tượng">Sửa</button>
+            <button ${config.editable ? '' : 'disabled'} class="table-row-btn delete" data-row-action="delete" title="Xóa đối tượng">Xóa</button>
           </div>
         `;
       },
@@ -727,19 +699,22 @@ export function createCrudManager({
       return;
     }
 
+    const requestVersion = ++attributeRequestVersion;
     loadAttributeBtn.disabled = true;
     loadAttributeBtn.innerText = 'Đang tải...';
+    setAttributeStatus('Đang tải bảng thuộc tính…');
 
     try {
       const response = await fetch(attributeUrl);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const data = await response.json();
+      if (requestVersion !== attributeRequestVersion) return;
       const features = data.features || [];
       attributeCache = features;
 
       if (!features.length) {
-        alert('Lớp này không có dữ liệu');
+        setAttributeStatus('Lớp này không có dữ liệu.');
         if (attributeTable) attributeTable.clearData();
         config.wfsLayer.getSource().clear(true);
         return;
@@ -767,6 +742,8 @@ export function createCrudManager({
           zoomToAttributeFeature(row.getData());
         }
       });
+      attributeTable.on('tableBuilt', applyAttributeFilter);
+      setAttributeStatus(`Đã tải ${features.length} đối tượng. Dùng Xem, Sửa hoặc Xóa trên từng dòng.`);
 
       const mapFeatures = geojsonFormat.readFeatures(data, {
         featureProjection: map.getView().getProjection(),
@@ -776,8 +753,9 @@ export function createCrudManager({
       config.wfsLayer.getSource().clear(true);
       config.wfsLayer.getSource().addFeatures(mapFeatures);
     } catch (error) {
+      if (requestVersion !== attributeRequestVersion) return;
       console.error('Lỗi tải bảng thuộc tính:', error);
-      alert('Không tải được dữ liệu từ GeoServer');
+      setAttributeStatus(`Không tải được dữ liệu từ GeoServer: ${error.message}`);
     } finally {
       loadAttributeBtn.disabled = false;
       loadAttributeBtn.innerText = 'Tải dữ liệu';
@@ -786,80 +764,68 @@ export function createCrudManager({
 
   function reloadAttributeTableAfterCrud(config) {
     if (!attributeTablePanel.classList.contains('active')) return;
+    if (attributeTablePanel.dataset.dataType === 'raster') return;
     if (getCurrentAttributeConfig()?.wfsLayer !== config?.wfsLayer) return;
     setTimeout(loadAttributeTable, 300);
   }
 
-  function bindEvents() {
-    chooseLayerCancel.addEventListener('click', closeChooseLayerPopup);
-
-    chooseLayerOk.addEventListener('click', function () {
-      currentLayerConfig = editableLayers.find(
-        config => config.id === chooseLayerSelect.value
-      ) || null;
-
-      closeChooseLayerPopup();
-
-      if (!currentLayerConfig) {
-        alert('Không tìm thấy cấu hình lớp');
-        resetCrudState();
-        return;
-      }
-
-      if (currentAction === 'add') startAdd();
-      if (currentAction === 'edit') startEdit();
-      if (currentAction === 'delete') startDelete();
-    });
-
-    attributeSave.addEventListener('click', function () {
-      const inputs = attributeForm.querySelectorAll('input');
-      if (currentAction === 'add') saveAddAttributes(inputs);
-      else if (currentAction === 'edit') saveEditAttributes(inputs);
-      else alert('Chưa chọn thao tác thêm hoặc sửa');
-    });
-
-    attributeCancel.addEventListener('click', function () {
-      if (currentAction === 'add') cancelAdd();
-      else if (currentAction === 'edit') cancelEdit();
-      closeAttributePopup();
-    });
-
-    loadAttributeBtn.addEventListener('click', loadAttributeTable);
-    closeAttributeTableBtn.addEventListener('click', closeAttributeTable);
-    tableAddBtn.addEventListener('click', addAttributeRow);
-
-    attributeLayerSelect.addEventListener('change', function () {
-      clearAttributeHighlight();
-      cleanHighlight();
-      attributeCache = [];
-      if (attributeTable) attributeTable.clearData();
-      if (currentAction === 'add') cancelAdd();
-    });
-
-    document.querySelectorAll('[data-menu-action]').forEach(function (button) {
-      button.addEventListener('click', function () {
-        const action = button.dataset.menuAction;
-        let handled = true;
-
-        if (action === 'add-data') openChooseLayerPopup('add');
-        else if (action === 'edit-data') openChooseLayerPopup('edit');
-        else if (action === 'delete-data') openChooseLayerPopup('delete');
-        else if (action === 'attribute-table') openAttributeTable();
-        else handled = false;
-
-        if (handled) closeMenu();
+  layerSelect.addEventListener('change', () => {
+    if (isSaving) return;
+    currentLayerConfig = editableLayers.find(config => config.id === layerSelect.value) || null;
+    renderStart();
+  });
+  closeButton.addEventListener('click', resetCrudState);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') resetCrudState();
+  });
+  document.querySelectorAll('[data-tool-action]').forEach(element => {
+    element.addEventListener('click', resetCrudState);
+  });
+  // Theo dõi cả nhóm cha để hủy bản nháp khi lớp đang biên tập bị tắt.
+  function watchVisibility(collection) {
+    collection.forEach(layer => {
+      layer.on('change:visible', () => {
+        if (!currentAction || isSaving) return;
+        const previousId = currentLayerConfig?.id;
+        const stillVisible = currentLayerConfig && isLayerVisible(currentLayerConfig);
+        renderLayerOptions(previousId);
+        if (!stillVisible) renderStart();
       });
+      if (layer.getLayers) watchVisibility(layer.getLayers());
     });
   }
-
-  bindEvents();
-
+  watchVisibility(map.getLayers());
+  loadAttributeBtn.addEventListener('click', loadAttributeTable);
+  closeAttributeTableBtn.addEventListener('click', closeAttributeTable);
+  tableAddBtn.addEventListener('click', addAttributeRow);
+  attributeLayerSelect.addEventListener('change', () => {
+    if (!isSaving) resetCrudState();
+    attributeRequestVersion++;
+    attributeCache = [];
+    tableAddBtn.disabled = !getCurrentAttributeConfig()?.editable;
+    attributeTable?.clearData();
+    attributeKeyword = '';
+    if (attributeFilter) attributeFilter.value = '';
+    setAttributeStatus('Chọn “Tải dữ liệu” để xem lớp mới.');
+  });
+  document.querySelectorAll('[data-menu-action]').forEach(element => {
+    element.addEventListener('click', () => {
+      const action = element.dataset.menuAction;
+      if (action === 'add-data') openChooseLayerPopup('add');
+      else if (action === 'edit-data') openChooseLayerPopup('edit');
+      else if (action === 'delete-data') openChooseLayerPopup('delete');
+      else if (action === 'attribute-table') openAttributeTable();
+      else return;
+      closeMenu();
+    });
+  });
   return {
-    handleMapClick,
-    openChooseLayerPopup,
-    openAttributeTable,
-    closeAttributeTable,
-    cancel: resetCrudState,
-    getCurrentAction: () => currentAction
+    handleMapClick, openChooseLayerPopup, openAttributeTable, closeAttributeTable,
+    setAttributeDataType(type) {
+      attributeTablePanel.dataset.dataType = type;
+      if (type === 'raster') { attributeRequestVersion++; clearAttributeHighlight(); }
+      else attributeTable?.redraw(true);
+    },
+    cancel: resetCrudState, getCurrentAction: () => currentAction
   };
 }

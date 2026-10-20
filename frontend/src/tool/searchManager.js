@@ -32,7 +32,7 @@ export function createSearchManager({
   const searchSuggestList = getRequiredElement('search-suggest-list');
 
   const searchLayers = layerConfigs.filter(
-    config => config.searchable && config.wfsLayer
+    config => config.wfsLayer
   );
 
   const geojsonFormat = new GeoJSON();
@@ -51,6 +51,9 @@ export function createSearchManager({
   let searchReadyPromise = null;
   let searchHighlightLayer = null;
   let refreshTimer = null;
+  let indexVersion = 0;
+  let searchVersion = 0;
+  let loadFailures = 0;
 
   function normalizeText(value) {
     return String(value ?? '')
@@ -85,6 +88,7 @@ export function createSearchManager({
   }
 
   async function loadSearchLayer(config) {
+    const version = indexVersion;
     const url = getWfsUrl(config.wfsLayer);
     if (!url) return [];
 
@@ -94,6 +98,7 @@ export function createSearchManager({
     }
 
     const data = await response.json();
+    if (version !== indexVersion) return [];
     const features = geojsonFormat.readFeatures(data, {
       featureProjection: map.getView().getProjection(),
       dataProjection: 'EPSG:4326'
@@ -110,8 +115,9 @@ export function createSearchManager({
         `${config.searchTitle || config.title} ${index + 1}`
       );
       const description = makeDescription(feature, config);
-      const allValues = (config.searchFields || [])
-        .map(field => feature.get(field))
+      const allValues = Object.entries(feature.getProperties())
+        .filter(([key]) => key !== feature.getGeometryName())
+        .map(([, value]) => typeof value === 'object' ? JSON.stringify(value) : value)
         .join(' ');
 
       return {
@@ -127,13 +133,18 @@ export function createSearchManager({
   function preloadData() {
     if (searchReadyPromise) return searchReadyPromise;
 
-    searchReadyPromise = Promise.all(searchLayers.map(loadSearchLayer))
+    const version = indexVersion;
+    searchReadyPromise = Promise.allSettled(searchLayers.map(loadSearchLayer))
       .then(function (results) {
-        searchIndex = results.flat();
+        if (version !== indexVersion) return [];
+        loadFailures = results.filter(result => result.status === 'rejected').length;
+        if (loadFailures === searchLayers.length && searchLayers.length) throw new Error('Không thể tải các lớp tìm kiếm');
+        searchIndex = results.filter(result => result.status === 'fulfilled').flatMap(result => result.value);
         console.log('Đã nạp dữ liệu tìm kiếm:', searchIndex.length, 'đối tượng');
         return searchIndex;
       })
       .catch(function (error) {
+        if (version !== indexVersion) return [];
         searchIndex = [];
         searchReadyPromise = null;
         console.error('Lỗi nạp dữ liệu tìm kiếm:', error);
@@ -151,6 +162,8 @@ export function createSearchManager({
   }
 
   function close() {
+    searchVersion++;
+    clearTimeout(searchTimer);
     searchSuggestPanel.classList.remove('active');
   }
 
@@ -262,6 +275,7 @@ export function createSearchManager({
   }
 
   async function searchNow() {
+    const version = ++searchVersion;
     const keyword = searchInput.value.trim();
 
     if (keyword.length < 2) {
@@ -278,12 +292,20 @@ export function createSearchManager({
 
     try {
       await preloadData();
+      if (version !== searchVersion) return;
       const normalizedKeyword = normalizeText(keyword);
       const results = searchIndex
         .filter(item => item.searchText.includes(normalizedKeyword))
         .slice(0, resultLimit);
       renderResults(results);
+      if (loadFailures) {
+        const warning = document.createElement('div');
+        warning.className = 'search-suggest-empty';
+        warning.textContent = `${loadFailures} lớp chưa tải được. Kết quả hiện tại chỉ bao gồm các lớp tải thành công.`;
+        searchSuggestList.append(warning);
+      }
     } catch (error) {
+      if (version !== searchVersion) return;
       showMessage('Không thể nạp dữ liệu tìm kiếm');
     }
   }
@@ -294,6 +316,8 @@ export function createSearchManager({
   }
 
   function refresh(delay = 500) {
+    indexVersion++;
+    searchVersion++;
     clearTimeout(refreshTimer);
     searchIndex = [];
     searchReadyPromise = null;
@@ -305,6 +329,7 @@ export function createSearchManager({
 
   function bindEvents() {
     searchInput.addEventListener('input', function () {
+      searchVersion++;
       clearTimeout(searchTimer);
 
       if (!searchInput.value.trim()) {

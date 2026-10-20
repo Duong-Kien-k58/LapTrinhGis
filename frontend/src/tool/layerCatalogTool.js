@@ -1,8 +1,13 @@
+import WMSCapabilities from 'ol/format/WMSCapabilities.js';
+import { get as getProjection, transformExtent } from 'ol/proj.js';
+import { extend, createEmpty } from 'ol/extent.js';
+
 const STORAGE_KEY = 'webgis_layer_catalog_v1';
 
 function getSavedState() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; // Đọc thứ tự đã lưu
+    const state = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return state && typeof state === 'object' && !Array.isArray(state) ? state : {};
   } catch {
     return {};
   }
@@ -41,18 +46,57 @@ export function createLayerCatalogTool({
   const groups = [...thematicGroups, rasterGroup]; // Các nhóm được phép kéo
   const groupById = new Map(groups.map(group => [group.get('tocGroupId'), group]));
   const configById = new Map(layerConfigs.map(config => [config.id, config]));
-  const rasterConfigById = new Map(Object.keys(rasterLayerMap).map(id => [id, rasterLayerMap[id]]));
+  const allGroups = [...groups, baseGroup].filter(Boolean);
   const defaultGroupOrder = getUiOrder(map.getLayers())
     .filter(layer => groups.includes(layer));
   const defaultLayerOrders = new Map(
-    groups.map(group => [group, getUiOrder(group.getLayers())])
+    allGroups.map(group => [group, getUiOrder(group.getLayers())])
   );
   const defaultCollapsed = new Map(
-    [...groups, baseGroup].filter(Boolean)
+    allGroups
       .map(group => [group, Boolean(group.get('tocCollapsed'))])
   );
+  const defaultGroupVisibility = new Map(allGroups.map(group => [group, group.getVisible()]));
+  const defaultLayerVisibility = new Map();
+  const defaultGroupByLayer = new Map();
+
+  function rememberLayer(layer, group) {
+    if (defaultGroupByLayer.has(layer)) return;
+    // Raster mới luôn trở về nhóm raster khi chọn Khôi phục.
+    const home = layer.get('layerKind') === 'raster' || layer.get('rasterName') ? rasterGroup : group;
+    defaultGroupByLayer.set(layer, home);
+    defaultLayerVisibility.set(layer, layer.getVisible());
+    const defaults = defaultLayerOrders.get(home);
+    if (defaults && !defaults.includes(layer)) defaults.push(layer);
+  }
+
+  allGroups.forEach(group => {
+    group.getLayers().forEach(layer => rememberLayer(layer, group));
+    group.getLayers().on('add', event => rememberLayer(event.element, group));
+  });
+
+  function liveMovableLayers() {
+    const layers = new Map();
+    groups.forEach(group => group.getLayers().forEach(layer => {
+      const id = getLayerId(layer) || layer;
+      if (!layers.has(id)) layers.set(id, layer);
+    }));
+    return [...layers.values()];
+  }
+
+  function placeLayers(desiredByGroup) {
+    // Xóa khỏi tất cả nhóm trước khi thêm để một lớp chỉ có một nhóm cha.
+    groups.forEach(group => group.getLayers().clear());
+    groups.forEach(group => {
+      const layers = desiredByGroup.get(group) || [];
+      group.getLayers().extend(layers.slice().reverse());
+      layers.forEach(layer => setLayerGroup(layer, group));
+    });
+  }
 
   let selectedLayer = null;
+  let zoomRequest = 0;
+  const capabilitiesCache = new Map();
   let dragged = null; // Đối tượng đang được kéo
 
   const button = document.createElement('button');
@@ -83,6 +127,7 @@ export function createLayerCatalogTool({
         <button type="button" class="layer-catalog-reset">Khôi phục</button>
       </div>
     </div>
+    <div class="toc-zoom-status" role="status" hidden></div>
     <div class="layer-catalog-content"></div>
   `;
 
@@ -92,6 +137,94 @@ export function createLayerCatalogTool({
   const closeButton = panel.querySelector('.layer-catalog-close');
   const saveButton = panel.querySelector('.layer-catalog-save');
   const resetButton = panel.querySelector('.layer-catalog-reset');
+  const zoomStatus = panel.querySelector('.toc-zoom-status');
+
+  function validExtent(extent) {
+    return Array.isArray(extent) && extent.length === 4 && extent.every(Number.isFinite)
+      && extent[0] <= extent[2] && extent[1] <= extent[3];
+  }
+
+  async function getLayerExtent(layer, refresh = false) {
+    const projection = map.getView().getProjection();
+    const metadata = layer.get('rasterMetadata');
+    if (validExtent(metadata?.bbox) && getProjection(metadata.crs)) {
+      const extent = transformExtent(metadata.bbox, metadata.crs, projection, 8);
+      if (validExtent(extent)) return extent;
+    }
+    if (validExtent(layer.getExtent())) return layer.getExtent();
+    const source = layer.getSource();
+    if (isBaseLayer(layer)) return projection.getExtent();
+    if (typeof source?.getExtent === 'function' && validExtent(source.getExtent())) return source.getExtent();
+
+    // WMS cung cấp phạm vi WGS84 cả khi CRS gốc của raster chưa được đăng ký.
+    const serviceUrl = source?.getUrls?.()?.[0] || source?.getUrl?.();
+    const names = String(source?.getParams?.().LAYERS || '').split(',').filter(Boolean);
+    if (!serviceUrl || !names.length) throw new Error('Lớp chưa có thông tin phạm vi.');
+    const url = new URL(serviceUrl, window.location.href);
+    url.search = '';
+    url.searchParams.set('SERVICE', 'WMS');
+    url.searchParams.set('REQUEST', 'GetCapabilities');
+    url.searchParams.set('VERSION', '1.3.0');
+    const key = url.href;
+    if (!capabilitiesCache.has(key)) {
+      const request = fetch(key, { signal: AbortSignal.timeout(15000) }).then(async response => {
+        if (!response.ok) throw new Error('Không tải được phạm vi lớp từ GeoServer.');
+        const capabilities = new WMSCapabilities().read(await response.text());
+        if (!capabilities?.Capability?.Layer) throw new Error('GeoServer không trả về danh mục lớp hợp lệ.');
+        return capabilities.Capability.Layer;
+      }).catch(error => { capabilitiesCache.delete(key); throw error; });
+      capabilitiesCache.set(key, request);
+    }
+    const root = await capabilitiesCache.get(key);
+    const extent = createEmpty();
+    const found = new Set();
+    function visit(node) {
+      const matched = names.filter(name => node.Name === name || (!name.includes(':') && node.Name?.split(':').at(-1) === name));
+      if (matched.length && validExtent(node.EX_GeographicBoundingBox)) {
+        extend(extent, transformExtent(node.EX_GeographicBoundingBox, 'EPSG:4326', projection, 8));
+        matched.forEach(name => found.add(name));
+      }
+      (node.Layer || []).forEach(visit);
+    }
+    visit(root);
+    // Raster vừa publish có thể chưa nằm trong danh mục đã tải trước đó.
+    if (found.size !== names.length && !refresh) {
+      capabilitiesCache.delete(key);
+      return getLayerExtent(layer, true);
+    }
+    if (found.size !== names.length || !validExtent(extent)) throw new Error('Không tìm thấy phạm vi của lớp trên GeoServer.');
+    return extent;
+  }
+
+  async function zoomToLayer(layer, group, eye) {
+    const request = ++zoomRequest;
+    eye.disabled = true;
+    eye.setAttribute('aria-busy', 'true');
+    zoomStatus.hidden = false;
+    zoomStatus.textContent = `Đang lấy phạm vi ${layer.get('title')}…`;
+    try {
+      const extent = await getLayerExtent(layer);
+      if (request !== zoomRequest) return;
+      if (!validExtent(extent)) throw new Error('Phạm vi của lớp không hợp lệ.');
+      if (isBaseLayer(layer)) baseGroup.getLayers().forEach(item => item.setVisible(item === layer));
+      else layer.setVisible(true);
+      group.setVisible(true);
+      selectedLayer = layer;
+      const width = map.getSize()?.[0] || 0;
+      const panelWidth = panel.getBoundingClientRect().width;
+      const compact = width < panelWidth + 200;
+      if (compact) closePanel();
+      map.getView().cancelAnimations();
+      map.getView().fit(extent, { duration: 500, maxZoom: 17, padding: [40, compact ? 40 : panelWidth + 40, 40, 40] });
+      zoomStatus.hidden = true;
+      render();
+    } catch (error) {
+      if (request === zoomRequest) zoomStatus.textContent = error.message || 'Không thể zoom tới lớp. Hãy thử lại.';
+    } finally {
+      eye.disabled = false;
+      eye.removeAttribute('aria-busy');
+    }
+  }
 
   function getConfigForLayer(layer) {
     return configById.get(getLayerId(layer)) || null;
@@ -110,79 +243,113 @@ export function createLayerCatalogTool({
       groupOrder: getUiOrder(map.getLayers())
         .filter(layer => groups.includes(layer))
         .map(group => group.get('tocGroupId')),
-      groups: {},
-      expanded: {}
+      groups: {}, expanded: {},
+      visibility: { groups: {}, layers: {} }
     };
-
-    groups.forEach(group => {
+    allGroups.forEach(group => {
       const id = group.get('tocGroupId');
-      state.groups[id] = getUiOrder(group.getLayers()).map(getLayerId).filter(Boolean); // Lưu thứ tự layer
-      state.expanded[id] = !group.get('tocCollapsed'); // Lưu đóng/mở nhóm
+      if (groups.includes(group)) state.groups[id] = getUiOrder(group.getLayers()).map(getLayerId).filter(Boolean);
+      state.expanded[id] = !group.get('tocCollapsed');
+      state.visibility.groups[id] = group.getVisible();
+      group.getLayers().forEach(layer => {
+        const layerId = getLayerId(layer);
+        if (layerId) state.visibility.layers[layerId] = layer.getVisible();
+      });
     });
-
-    state.expanded.base = !baseGroup.get('tocCollapsed');
     setSavedState(state);
   }
 
   function applyState() {
     const state = getSavedState();
-
     const orderedGroups = [];
-    (state.groupOrder || []).forEach(function (id) {
+    (Array.isArray(state.groupOrder) ? state.groupOrder : []).forEach(id => {
       const group = groupById.get(id);
       if (group && !orderedGroups.includes(group)) orderedGroups.push(group);
     });
-
     groups.forEach(group => {
-      if (!orderedGroups.includes(group)) orderedGroups.push(group); // Bổ sung nhóm mới
+      if (!orderedGroups.includes(group)) orderedGroups.push(group);
     });
 
     const fixedLayers = map.getLayers().getArray().filter(layer => !groups.includes(layer));
     map.getLayers().clear();
-    map.getLayers().extend([...fixedLayers, ...orderedGroups.reverse()]);
+    map.getLayers().extend([...fixedLayers, ...orderedGroups.slice().reverse()]);
 
+    // Tìm theo tập lớp toàn cục để khôi phục cả các lớp đã kéo sang nhóm khác.
+    const currentLayers = liveMovableLayers();
+    const byId = new Map(currentLayers.map(layer => [getLayerId(layer), layer]));
+    const currentGroup = new Map(groups.flatMap(group => group.getLayers().getArray().map(layer => [layer, group])));
+    const desiredByGroup = new Map(groups.map(group => [group, []]));
+    const placed = new Set();
     groups.forEach(group => {
-      const groupId = group.get('tocGroupId');
-      const desiredIds = state.groups?.[groupId] || [];
-      const currentUiLayers = getUiOrder(group.getLayers());
-
-      const desiredLayers = desiredIds
-        .map(id => currentUiLayers.find(layer => getLayerId(layer) === id))
-        .filter(Boolean);
-
-      currentUiLayers.forEach(layer => {
-        if (!desiredLayers.includes(layer)) desiredLayers.push(layer); // Thêm layer mới chưa được lưu
+      const desiredIds = state.groups?.[group.get('tocGroupId')];
+      (Array.isArray(desiredIds) ? desiredIds : []).forEach(id => {
+        const layer = byId.get(id);
+        if (!layer || placed.has(layer)) return;
+        desiredByGroup.get(group).push(layer);
+        placed.add(layer);
       });
-
-      moveCollectionToUiOrder(group.getLayers(), desiredLayers);
-      group.set('tocCollapsed', state.expanded?.[groupId] === false);
     });
+    currentLayers.forEach(layer => {
+      if (placed.has(layer)) return;
+      const group = currentGroup.get(layer) || defaultGroupByLayer.get(layer) || rasterGroup;
+      desiredByGroup.get(group).push(layer);
+    });
+    placeLayers(desiredByGroup);
 
-    baseGroup.set('tocCollapsed', state.expanded?.base === false);
+    allGroups.forEach(group => {
+      const id = group.get('tocGroupId');
+      if (typeof state.expanded?.[id] === 'boolean') group.set('tocCollapsed', !state.expanded[id]);
+      if (typeof state.visibility?.groups?.[id] === 'boolean') group.setVisible(state.visibility.groups[id]);
+      group.getLayers().forEach(layer => {
+        const visible = state.visibility?.layers?.[getLayerId(layer)];
+        if (typeof visible === 'boolean') layer.setVisible(visible);
+      });
+    });
   }
 
   function resetCatalog() {
     localStorage.removeItem(STORAGE_KEY);
-
     const fixedLayers = map.getLayers().getArray().filter(layer => !groups.includes(layer));
     map.getLayers().clear();
     map.getLayers().extend([...fixedLayers, ...defaultGroupOrder.slice().reverse()]);
 
+    // Chỉ khôi phục đối tượng còn tồn tại: không hồi sinh raster đã xóa.
+    const currentLayers = new Set(liveMovableLayers());
+    const desiredByGroup = new Map(groups.map(group => [group, []]));
+    const placed = new Set();
     groups.forEach(group => {
-      moveCollectionToUiOrder(group.getLayers(), defaultLayerOrders.get(group) || []);
+      (defaultLayerOrders.get(group) || []).forEach(layer => {
+        if (!currentLayers.has(layer) || placed.has(layer)) return;
+        const home = defaultGroupByLayer.get(layer) || group;
+        desiredByGroup.get(home).push(layer);
+        placed.add(layer);
+      });
     });
-    defaultCollapsed.forEach(function (collapsed, group) {
-      group.set('tocCollapsed', collapsed);
+    currentLayers.forEach(layer => {
+      if (placed.has(layer)) return;
+      const home = defaultGroupByLayer.get(layer) || rasterGroup;
+      desiredByGroup.get(home).push(layer);
     });
+    placeLayers(desiredByGroup);
+    allGroups.forEach(group => {
+      group.set('tocCollapsed', defaultCollapsed.get(group));
+      group.setVisible(defaultGroupVisibility.get(group));
+      group.getLayers().forEach(layer => layer.setVisible(defaultLayerVisibility.get(layer) ?? true));
+    });
+    const currentBase = baseGroup.getLayers().getArray();
+    moveCollectionToUiOrder(baseGroup.getLayers(), [
+      ...(defaultLayerOrders.get(baseGroup) || []).filter(layer => currentBase.includes(layer)),
+      ...currentBase.filter(layer => !defaultLayerOrders.get(baseGroup)?.includes(layer))
+    ]);
+    if (selectedLayer && !currentLayers.has(selectedLayer) && !currentBase.includes(selectedLayer)) selectedLayer = null;
     render();
   }
 
   function setLayerGroup(layer, targetGroup) {
-    const config = getConfigForLayer(layer);
-    if (!config) return;
-
     const groupId = targetGroup.get('tocGroupId');
-    if (groupId !== 'raster') config.group = groupId; // Cập nhật nhóm của layer
+    const config = getConfigForLayer(layer);
+    if (config) config.group = groupId;
+    layer.set('catalogGroupId', groupId);
   }
 
   function createLayerRow(layer, group, canDrag = true) {
@@ -215,6 +382,17 @@ export function createLayerCatalogTool({
     label.innerText = layer.get('title') || layerId;
 
     row.append(checkbox, label);
+
+    const eye = document.createElement('button');
+    eye.type = 'button';
+    eye.className = 'toc-zoom-layer';
+    eye.title = `Zoom tới lớp ${layer.get('title') || layerId}`;
+    eye.setAttribute('aria-label', eye.title);
+    eye.draggable = false;
+    eye.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
+    eye.addEventListener('click', event => { event.stopPropagation(); zoomToLayer(layer, group, eye); });
+    eye.addEventListener('dragstart', event => { event.preventDefault(); event.stopPropagation(); });
+    row.append(eye);
 
     row.addEventListener('click', function (event) {
       if (event.target === checkbox) return;
@@ -440,6 +618,7 @@ export function createLayerCatalogTool({
   }
 
   button.onclick = function () {
+    render(); // Đồng bộ checkbox sau khi công cụ khác thay đổi visibility.
     panel.classList.toggle('shown');
   };
 
@@ -466,5 +645,9 @@ export function createLayerCatalogTool({
   applyState(); // Khôi phục thứ tự
   render(); // Hiển thị TOC
 
-  return { render };
+  return {
+    render, getLayerExtent,
+    // Áp dụng lại cả placement cho raster động được tải sau lần khởi tạo catalog.
+    restoreVisibility() { applyState(); render(); }
+  };
 }

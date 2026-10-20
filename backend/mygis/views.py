@@ -8,6 +8,10 @@ from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
+
+def health(request):
+    return JsonResponse({'success': True, 'status': 'ok', 'service': 'LapTrinhGis'})
+
 SRID = 4326
 
 # Chỉ các bảng và trường được khai báo tại đây mới có thể được CRUD.

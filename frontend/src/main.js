@@ -1,6 +1,11 @@
 //#region 1. IMPORT
 import 'ol/ol.css';
 import './style.css';
+import './workspace.css';
+import './ptn-workspace.css';
+import { createPositionSearchTool } from './tool/positionSearchTool.js';
+import { initWorkspaceTools } from './tool/workspaceTools.js';
+import { createSystemTools } from './tool/systemTools.js';
 
 import Map from 'ol/Map.js';
 import View from 'ol/View.js';
@@ -42,6 +47,8 @@ import {
 
 import {
   makePanelDraggable,
+  loadWmsImage,
+  initTooltips,
 } from './tool/toolUtils.js';
 
 import { createCrudManager } from './tool/crudManager.js';
@@ -49,6 +56,10 @@ import { createSearchManager } from './tool/searchManager.js';
 import { createPopupTool } from './tool/popupTool.js';
 import { createCesiumTool } from './tool/cesiumTool.js';
 import { createLayerCatalogTool } from './tool/layerCatalogTool.js';
+import { createRasterManager } from './tool/rasterManager.js';
+import { createDataTableTool } from './tool/dataTableTool.js';
+import { createLayerStyleTool } from './tool/layerStyleTool.js';
+import { createLayerOverviewTool } from './tool/layerOverviewTool.js';
 //#endregion
 
 //#region 2. KHỞI TẠO LỚP VÀ NHÓM BẢN ĐỒ
@@ -59,6 +70,7 @@ function createBaseLayer(cfg) {
   if (cfg.sourceType === 'XYZ') {
     source = new XYZ({
       url: cfg.url,
+      maxZoom: cfg.sourceMaxZoom ?? 19,
       crossOrigin: 'anonymous'
     });
   } else {
@@ -103,8 +115,8 @@ function createWmsLayer(cfg) {
     title: cfg.title,
     visible: cfg.visible,
     source: isLabelledAdministrativeLayer
-      ? new ImageWMS({ ...sourceOptions, ratio: 1.5 })
-      : new TileWMS(sourceOptions)
+      ? new ImageWMS({ ...sourceOptions, ratio: 1.5, imageLoadFunction: loadWmsImage })
+      : new TileWMS({ ...sourceOptions, tileLoadFunction: loadWmsImage })
   };
   const layer = isLabelledAdministrativeLayer
     ? new ImageLayer(layerOptions)
@@ -142,6 +154,7 @@ function createRasterLayer(cfg) {
     minZoom: cfg.minZoom,
     maxZoom: cfg.maxZoom,
     source: new TileWMS({
+      tileLoadFunction: loadWmsImage,
       url: GEOSERVER_CONFIG.wmsUrl,
       params: {
         LAYERS: cfg.layerName,
@@ -157,6 +170,8 @@ function createRasterLayer(cfg) {
   });
   layer.set('configId', cfg.id);
   layer.set('layerKind', 'raster');
+  layer.set('rasterName', cfg.layerName);
+  layer.set('rasterMetadata', { name: cfg.layerName, title: cfg.title, presentation_type: cfg.id === 'dem_vietnam' ? 'dem' : 'satellite' });
 
   return layer;
 }
@@ -250,8 +265,8 @@ const map = new Map({
     ...mapGroups.slice().reverse()
   ],
   view: new View({
-    center: fromLonLat([105.8, 21.04]),
-    zoom: 1
+    center: fromLonLat([107.5, 16.2]),
+    zoom: 5
   })
 });
 createCesiumTool(map);
@@ -263,9 +278,11 @@ const popupTool = createPopupTool({
 });
 
 const basicTools = createBasicTools(map);
+const layerStyle = createLayerStyleTool({ thematicGroups, rasterGroup });
+const layerOverview = createLayerOverviewTool({ map, thematicGroups, rasterGroup });
 
 // Bảng mục lục lớp theo kiểu ArcMap. Bảng này thay LayerSwitcher cũ.
-createLayerCatalogTool({
+const layerCatalog = createLayerCatalogTool({
   map,
   baseGroup,
   thematicGroups,
@@ -300,11 +317,18 @@ const sideMenu = document.getElementById('side-menu');
 const overlay = document.getElementById('overlay');
 
 function openMenu() {
+  sideMenu.inert = false;
+  menubtn.setAttribute('aria-expanded', 'true');
   sideMenu.classList.add('active');
   overlay.classList.add('active');
+  closeMenuBtn.focus();
 }
 
 function closeMenu() {
+  const returnFocus = sideMenu.contains(document.activeElement);
+  sideMenu.inert = true;
+  menubtn.setAttribute('aria-expanded', 'false');
+  if (returnFocus) menubtn.focus();
   sideMenu.classList.remove('active');
   overlay.classList.remove('active');
 }
@@ -312,6 +336,17 @@ function closeMenu() {
 menubtn.addEventListener('click', openMenu);
 closeMenuBtn.addEventListener('click', closeMenu);
 overlay.addEventListener('click', closeMenu);
+document.addEventListener('keydown', event => {
+  if (!sideMenu.classList.contains('active')) return;
+  if (event.key === 'Escape') closeMenu();
+  if (event.key === 'Tab') {
+    const items = [...sideMenu.querySelectorAll('button:not(:disabled)')].filter(item => item.getClientRects().length);
+    const first = items[0];
+    const last = items.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }
+});
 
 // THU GỌN / MỞ RỘNG NHÓM MENU
 document.querySelectorAll('.menu-group-title').forEach(function (title) {
@@ -321,10 +356,12 @@ document.querySelectorAll('.menu-group-title').forEach(function (title) {
     document.querySelectorAll('.menu-group').forEach(function (group) {
       if (group !== currentGroup) {
         group.classList.remove('active');
+        group.querySelector('.menu-group-title').setAttribute('aria-expanded', 'false');
       }
     });
 
     currentGroup.classList.toggle('active');
+    title.setAttribute('aria-expanded', String(currentGroup.classList.contains('active')));
   });
 });
 
@@ -386,15 +423,125 @@ const crudManager = createCrudManager({
   map,
   layerConfigs,
   closeMenu,
-  highlightFeature: popupTool.highlightFeature,
+  beforeStart: toolManager.closeAllTools,
   cleanHighlight: popupTool.clearHighlight,
   onDataChanged: function () {
     searchManager.refresh();
   }
 });
 
+const dataTableTool = createDataTableTool({
+  map, crudManager, rasterGroup,
+  getRasterExtent: layerCatalog.getLayerExtent,
+  beforeOpen: () => { crudManager.cancel(); toolManager.closeAllTools(); closeMenu(); }
+});
+document.querySelector('[data-menu-action="view-data"]').addEventListener('click', () => dataTableTool.open());
+document.querySelectorAll('[data-tool-action], [data-raster-action]').forEach(button => {
+  button.addEventListener('click', () => dataTableTool.close());
+});
+
+let initialRasterCatalogRestored = false;
+const rasterManager = createRasterManager({
+  rasterGroup,
+  thematicGroups,
+  onRasterStyleInvalidated: layerStyle.forget,
+  beforeOpen: () => { crudManager.cancel(); toolManager.closeAllTools(); closeMenu(); },
+  onRasterChanged: () => {
+    Object.keys(rasterLayerMap).forEach(id => delete rasterLayerMap[id]);
+    [...thematicGroups, rasterGroup].forEach(group => group.getLayers().forEach(layer => {
+      if (layer.get('rasterName')) rasterLayerMap[layer.get('configId')] = layer;
+    }));
+    if (!initialRasterCatalogRestored) {
+      initialRasterCatalogRestored = true;
+      layerCatalog.restoreVisibility();
+    } else layerCatalog.render();
+    window.dispatchEvent(new CustomEvent('webgis-rasters-changed'));
+  }
+});
+document.querySelectorAll('[data-raster-action]').forEach(button => {
+  button.addEventListener('click', () => rasterManager.open(button.dataset.rasterAction));
+});
+document.querySelectorAll('[data-menu-action], [data-tool-action], [data-layer-service], [data-config-action]').forEach(button => {
+  button.addEventListener('click', () => rasterManager.close());
+});
+// Khôi phục cả raster thêm mới và trạng thái xóa sau khi tải lại trang.
+rasterManager.load().catch(error => console.warn('Không tải được danh sách raster:', error.message));
+
+let auxiliaryTools = null;
+let systemTools = null;
+const positionSearch = createPositionSearchTool(map);
+auxiliaryTools = initWorkspaceTools({ map });
+systemTools = createSystemTools();
+document.querySelectorAll('[data-section]').forEach(button => {
+  button.addEventListener('click', () => {
+    const action = button.dataset.section;
+    if (action === 'position') positionSearch.open();
+    else if (action === 'tool-search') auxiliaryTools.openToolSearch();
+    else if (action === 'support') systemTools.openSupport();
+    else return;
+    closeMenu();
+  });
+});
+// Đóng trạng thái cũ trước khi handler mở công cụ mới. Nút thao tác trong
+// bảng không đi qua đây để không hủy bản nháp CRUD vừa được tạo từ một dòng.
+document.addEventListener('webgis-tool-activate', event => {
+  const name = event.detail?.name;
+  if (name !== 'data-view' && event.detail?.preserveDataTool !== 'data-view') dataTableTool.close();
+  if (name !== 'crud') crudManager.cancel();
+  if (name !== 'raster') rasterManager.close();
+  if (name !== 'presentation') layerStyle.close();
+  if (name !== 'overview') layerOverview.close();
+  toolManager.closeAllTools();
+  auxiliaryTools?.closeAll?.(name);
+  systemTools?.closeAll?.(name);
+  if (name !== 'position') positionSearch.close();
+});
+document.addEventListener('click', event => {
+  const button = event.target.closest('[data-menu-action], [data-raster-action], [data-tool-action], [data-config-action], [data-section]');
+  if (!button) return;
+  const action = button.dataset.menuAction;
+  const section = button.dataset.section || '';
+  const name = action === 'view-data' ? 'data-view'
+    : ['add-data', 'edit-data', 'delete-data'].includes(action) ? 'crud'
+    : button.dataset.rasterAction ? 'raster'
+    : layerStyle.supports(section) ? 'presentation'
+    : section.endsWith('-overview') ? 'overview'
+    : section.endsWith('-identify') ? 'identify'
+    : section || action || 'legacy-tool';
+  document.dispatchEvent(new CustomEvent('webgis-tool-activate', { detail: { name } }));
+}, true);
+
+document.querySelectorAll('[data-section]').forEach(button => {
+  button.addEventListener('click', () => {
+    const section = button.dataset.section;
+    if (!layerStyle.supports(section) && !section.endsWith('-overview') && !section.endsWith('-identify')) return;
+    crudManager.cancel();
+    rasterManager.close();
+    dataTableTool.close();
+    toolManager.closeAllTools();
+    closeMenu();
+    layerStyle.close();
+    if (section.endsWith('-overview')) layerOverview.open(section.startsWith('vector') ? 'vector' : 'raster');
+    else if (section.endsWith('-identify')) popupTool.open(section.startsWith('raster') ? 'raster' : 'vector');
+    else layerStyle.open(section);
+  });
+});
+document.querySelectorAll('[data-menu-action], [data-raster-action], [data-tool-action], [data-config-action]').forEach(button => {
+  button.addEventListener('click', () => layerStyle.close());
+});
+
+popupTool.setBeforeStart(() => {
+  document.dispatchEvent(new CustomEvent('webgis-tool-activate', { detail: { name: 'identify' } }));
+  crudManager.cancel();
+  dataTableTool.close();
+  rasterManager.close();
+  layerStyle.close();
+  toolManager.closeAllTools();
+});
+
 map.on('singleclick', function (event) {
   if (crudManager.handleMapClick(event)) return;
+  if (dataTableTool.handleMapClick(event)) return;
   popupTool.handleMapClick(event);
 });
 
@@ -460,14 +607,13 @@ function getDisplayLayerItems() {
       layer: config.wmsLayer
     });
   });
-  RASTER_LAYER_CONFIGS.forEach(function (cfg) {
-    const layer = rasterLayerMap[cfg.id];
-    if (!layer) return;
+  rasterGroup.getLayers().forEach(function (layer) {
+    const id = layer.get('configId');
     items.push({
-      key: 'raster:' + cfg.id,
-      id: cfg.id,
+      key: 'raster:' + id,
+      id,
       type: 'Raster',
-      title: cfg.title,
+      title: layer.get('title'),
       layer
     });
   });
@@ -930,3 +1076,24 @@ document.querySelectorAll('[data-config-action]').forEach(function (item) {
 applySavedLayerDisplayConfig(); // Áp dụng cấu hình lớp.
 applySavedMapControlConfig(); // Áp dụng cấu hình bản đồ.
 //#endregion
+
+// Phản hồi ngắn sau khi lưu để người dùng tiếp tục thao tác trên bản đồ.
+let toastTimer;
+window.addEventListener('webgis-data-saved', event => {
+  const toast = document.getElementById('workspace-toast');
+  const labels = { add: 'Đã thêm đối tượng', edit: 'Đã lưu thay đổi', delete: 'Đã xóa đối tượng' };
+  toast.textContent = `${labels[event.detail.action]} · ${event.detail.layerTitle}`;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
+});
+
+// Một cột cuộn chung giúp các icon luôn ở dưới header và không chồng lên nhau.
+const primaryControls = document.getElementById('primary-map-controls');
+primaryControls.append(document.querySelector('.layer-catalog-button'));
+map.getControls().forEach(control => {
+  if (control.element.matches('.ol-zoom, .ol-full-screen, .ol-zoom-extent, .ol-locate, .popup-info-control, .ol-rotate')) {
+    primaryControls.append(control.element);
+  }
+});
+initTooltips();
