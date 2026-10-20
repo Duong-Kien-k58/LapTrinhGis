@@ -3,6 +3,9 @@ node_modules/
 dist/
 .vite/
 
+# Local UI checks (not needed to run the application)
+frontend/tests/
+
 # Python
 __pycache__/
 *.pyc
