@@ -23,8 +23,21 @@ export function initWorkspaceTools({ map }) {
   const summary = document.createElement('section');
   summary.className = 'workspace-status';
   summary.setAttribute('aria-label', 'Thống kê lớp bản đồ');
-  summary.innerHTML = `<div class="workspace-layer-statistics"><span>Tổng lớp <b data-workspace-total>0</b></span><span>Đang bật <b data-workspace-visible>0</b></span><span>Vector <b data-workspace-vector>0</b></span><span>Raster <b data-workspace-raster>0</b></span></div>`;
-  document.querySelector('.workspace-header')?.append(summary);
+  summary.innerHTML = `
+    <div class="layer-summary-total">
+      <div class="layer-summary-number"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 7 9-4 9 4-9 4-9-4Zm0 5 9 4 9-4M3 17l9 4 9-4"/></svg><b data-workspace-total>0</b></div>
+      <span>Tổng số lớp</span>
+    </div>
+    <div class="workspace-layer-statistics">
+      <div class="layer-summary-active"><i aria-hidden="true"></i><b data-workspace-visible>0</b><span>đang hiển thị</span></div>
+      <div class="layer-summary-types">
+        <span title="Số lớp vector đang hiển thị"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 12 4-8 6 7Z"/><circle cx="3" cy="12" r="1.5"/><circle cx="7" cy="4" r="1.5"/><circle cx="13" cy="11" r="1.5"/></svg>Vector <b data-workspace-vector>0</b></span>
+        <span title="Số lớp raster đang hiển thị"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M6 2v12M10 2v12M2 6h12M2 10h12"/></svg>Raster <b data-workspace-raster>0</b></span>
+      </div>
+    </div>
+    <div class="layer-summary-meter" aria-hidden="true"><i></i></div>`;
+  const header = document.querySelector('.workspace-header');
+  header?.insertBefore(summary, document.getElementById('login-open'));
   let candidates = [];
   let selectedIndex = -1;
 
@@ -126,6 +139,9 @@ export function initWorkspaceTools({ map }) {
     };
     map.getLayers().forEach(layer => collect(layer));
     Object.entries(counts).forEach(([key, value]) => { summary.querySelector(`[data-workspace-${key}]`).textContent = value; });
+    summary.style.setProperty('--layer-active-share', `${counts.total ? counts.visible / counts.total * 100 : 0}%`);
+    summary.classList.toggle('has-visible-layers', counts.visible > 0);
+    summary.setAttribute('aria-label', `Thống kê lớp bản đồ: tổng ${counts.total} lớp, ${counts.visible} đang hiển thị, gồm ${counts.vector} vector và ${counts.raster} raster.`);
   }
   const layers = new WeakSet();
   const collections = new WeakSet();

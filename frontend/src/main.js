@@ -3,6 +3,8 @@ import 'ol/ol.css';
 import './style.css';
 import './workspace.css';
 import './ptn-workspace.css';
+import './login.css';
+import { initLoginUI } from './tool/loginTool.js';
 import { createPositionSearchTool } from './tool/positionSearchTool.js';
 import { initWorkspaceTools } from './tool/workspaceTools.js';
 import { createSystemTools } from './tool/systemTools.js';
@@ -1097,3 +1099,4 @@ map.getControls().forEach(control => {
   }
 });
 initTooltips();
+initLoginUI();

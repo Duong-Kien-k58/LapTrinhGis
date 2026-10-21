@@ -6,7 +6,17 @@
 tra cứu pixel raster, tìm vị trí WGS84/VN2000, tìm công cụ và bảng hỗ trợ trạng thái
 dịch vụ. Mục lục lưu thứ tự, nhóm, visibility; các panel hỗ trợ kéo và nhớ vị trí.
 Tìm thuộc tính bao gồm mọi trường của các lớp vector, giữ luồng CRUD và công cụ
-3D/PDF hiện có. Không tích hợp đăng nhập, đăng ký hoặc các chức năng tài khoản.
+3D/PDF hiện có. Có giao diện đăng nhập qua biểu tượng tài khoản ở góc trên bên
+phải. Giao diện có đăng nhập, đăng ký, quên mật khẩu, lựa chọn Google/Microsoft,
+hiện/ẩn mật khẩu, cảnh báo Caps Lock và kiểm tra độ mạnh mật khẩu khi đăng ký.
+Các thao tác xác thực hiện chưa kết nối backend và không gửi thông tin tài khoản.
+Nếu chọn **Ghi nhớ tài khoản**, chỉ tên đăng nhập được lưu trong trình duyệt;
+mật khẩu không được lưu. Bỏ chọn để xóa tên đăng nhập đã ghi nhớ.
+
+Thiết kế tham khảo bố cục hai cột của
+[shadcn/ui Authentication](https://ui.shadcn.com/blocks/authentication) và
+[Split Screen Login Page trên Dribbble](https://dribbble.com/shots/6668415-Split-Screen-Login-Page).
+Đồ họa bản đồ SVG được tạo riêng cho WebGIS, không phụ thuộc dịch vụ ảnh bên ngoài.
 
 Ứng dụng WebGIS gồm giao diện bản đồ, API Django và các dịch vụ bản đồ
 GeoServer/PostGIS. Frontend hiển thị, tra cứu và biên tập các lớp dữ liệu địa

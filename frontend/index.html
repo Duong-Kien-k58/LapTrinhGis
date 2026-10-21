@@ -39,6 +39,9 @@
             <div id="header-scale-ruler" aria-label="Thước tỷ lệ"></div>
           </div>
         </section>
+        <button id="login-open" class="header-login-button" type="button" title="Đăng nhập" aria-label="Đăng nhập" aria-haspopup="dialog" aria-controls="login-dialog">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/><path d="M19 3h3v7m-4-4 4 4"/></svg>
+        </button>
       </header>
 
       <nav id="right-map-tools" aria-label="Công cụ bản đồ">
@@ -202,6 +205,25 @@
       
     </div>
 
+    <dialog id="login-dialog" class="login-dialog" aria-labelledby="login-title" aria-describedby="login-description">
+      <button id="login-close" class="login-close" type="button" aria-label="Đóng đăng nhập">×</button>
+      <div class="login-shell">
+        <aside class="login-cover" aria-label="Không gian dữ liệu WebGIS">
+          <div class="login-cover-brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="m4 10 12-6 12 6-12 6-12-6Zm0 6 12 6 12-6M4 22l12 6 12-6"/></svg><span>WebGIS</span></div>
+          <img class="login-map-art" src="/assets/login-map.svg" alt="" aria-hidden="true" />
+          <div class="login-cover-note">
+            <span class="login-cover-note-label">KHÔNG GIAN DỮ LIỆU ĐỊA LÝ</span>
+            <p>Một không gian,<br>nhiều góc nhìn.</p>
+            <div class="login-cover-note-footer"><span>Bản đồ <i>·</i> Dữ liệu <i>·</i> Kết nối</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3Z"/></svg></div>
+          </div>
+        </aside>
+        <section class="login-main">
+          <div class="login-topline"><span class="login-mini-brand">WebGIS<span> / Tài khoản</span></span><span class="login-preview-badge">Bản xem trước</span></div>
+          <div id="login-content"></div>
+          <footer class="login-legal"><button type="button" data-auth-info="terms">Điều khoản</button><span>·</span><button type="button" data-auth-info="privacy">Quyền riêng tư</button><span>·</span><button type="button" data-auth-info="support">Trợ giúp</button></footer>
+        </section>
+      </div>
+    </dialog>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
