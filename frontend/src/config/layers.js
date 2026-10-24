@@ -15,12 +15,17 @@ export const DEFAULT_ID_FIELDS = ['gid', 'id','fid'];
 // =========================================================
 // Thứ tự khai báo là thứ tự hiển thị từ TRÊN xuống DƯỚI.
 export const LAYER_GROUP_CONFIGS = [
-  { id: 'background', title: 'Dữ liệu nền', fold: 'open' },
-  { id: 'administrative_point', title: 'Điểm hành chính', fold: 'open' },
-  { id: 'transport', title: 'Giao thông', fold: 'open' },
-  { id: 'administrative', title: 'Địa giới hành chính', fold: 'open' },
+  { id: 'background', title: 'Dữ liệu nền', fold: 'close' },
+  // 7 chủ đề dữ liệu địa lý, theo.
+  { id: 'survey', title: 'Cơ sở đo đạc', fold: 'close' },
+  { id: 'hydrology', title: 'Thủy văn', fold: 'close' },
+  { id: 'population', title: 'Dân cư', fold: 'close' },
+  { id: 'transport', title: 'Giao thông', fold: 'close' },
+  { id: 'administrative', title: 'Địa giới hành chính', fold: 'close' },
+  { id: 'terrain', title: 'Địa hình', fold: 'close' },
+  { id: 'land_cover', title: 'Phủ bề mặt', fold: 'close' },
   { id: 'raster', title: 'Dữ liệu Raster', fold: 'close', kind: 'raster' },
-  { id: 'base', title: 'Bản đồ nền', fold: 'close', kind: 'base' }
+  { id: 'base', title: 'Bản đồ nền địa lý', fold: 'close', kind: 'base' }
 ];
 
 // =========================================================
@@ -47,7 +52,7 @@ export const BASE_LAYER_CONFIGS = [
     visible: false,
     url: 'https://{a-c}.tile.opentopomap.org/{z}/{x}/{y}.png'
   },
-  //Satelite
+  //Satellite
   {
     id: 'satellite',
     title: 'Vệ tinh',
@@ -162,6 +167,42 @@ export const MAP_LAYER_CONFIGS = [
   //#endregion
   
   //#region: Nhóm hành chính
+  //UB tỉnh
+  {
+    id: 'ub_tinh',
+    title: 'UB Tỉnh',
+    group: 'administrative',
+    geometryType: 'Point',
+    visible: true,
+    selectable: true,
+    searchable: true,
+    editable: true,
+    attributeTable: true,
+    hasPopup: true,
+    selectName: 'Ủy ban',
+    searchTitle: 'UBND',
+    searchIcon: '●',
+    searchFields: ['ten', 'tinh', 'ten_tinh', 'TenTinhT', 'name', 'caphc'],
+    editFields: [
+      { name: 'ten', label: 'Tên UB' },
+      { name: 'caphc', label: 'Cấp hành chính' },
+      { name: 'tinh', label: 'Tỉnh' }
+    ],
+    popupHeader: 'Thông tin UB tỉnh',
+    popupFields: [
+      { label: 'Tên UB', fields: ['ten', 'name'] },
+      { label: 'Tỉnh', fields: ['tinh', 'ten_tinh', 'TenTinhT'] },
+      { label: 'Cấp HC', fields: ['caphc'] },
+      { label: 'GID', fields: ['gid', 'id'] }
+    ],
+    style: {
+      type: 'point',
+      radius: 6,
+      fill: 'red',
+      stroke: 'white',
+      width: 2
+    }
+  },
   //Ranh giới tỉnh
   {
     id: 'vn_tinh',
@@ -307,45 +348,6 @@ export const MAP_LAYER_CONFIGS = [
       width: 2
     }
   },
-  //#endregion
-
-  //#region: Nhóm điểm hành chính
-  //UB tỉnh
-  {
-    id: 'ub_tinh',
-    title: 'UB Tỉnh',
-    group: 'administrative_point',
-    geometryType: 'Point',
-    visible: true,
-    selectable: true,
-    searchable: true,
-    editable: true,
-    attributeTable: true,
-    hasPopup: true,
-    selectName: 'Ủy ban',
-    searchTitle: 'UBND',
-    searchIcon: '●',
-    searchFields: ['ten', 'tinh', 'ten_tinh', 'TenTinhT', 'name', 'caphc'],
-    editFields: [
-      { name: 'ten', label: 'Tên UB' },
-      { name: 'caphc', label: 'Cấp hành chính' },
-      { name: 'tinh', label: 'Tỉnh' }
-    ],
-    popupHeader: 'Thông tin UB tỉnh',
-    popupFields: [
-      { label: 'Tên UB', fields: ['ten', 'name'] },
-      { label: 'Tỉnh', fields: ['tinh', 'ten_tinh', 'TenTinhT'] },
-      { label: 'Cấp HC', fields: ['caphc'] },
-      { label: 'GID', fields: ['gid', 'id'] }
-    ],
-    style: {
-      type: 'point',
-      radius: 6,
-      fill: 'red',
-      stroke: 'white',
-      width: 2
-    }
-  }
   //#endregion
 ];
 

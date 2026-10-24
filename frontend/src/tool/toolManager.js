@@ -1,20 +1,11 @@
-import {
-  createMeasureTool
-} from './measureTool.js';
+//#region Imports
+import { createMeasureTool } from './measureTool.js';
+import { createSelectBoxTool } from './selectBoxTool.js';
+import { createPrintTool } from './printTool.js';
+import { createGeolocationTool } from './basicTools.js';
+//#endregion
 
-import {
-  createSelectBoxTool
-} from './selectBoxTool.js';
-
-import {
-  createGeolocationTool
-} from './geolocationTool.js';
-
-import {
-  createPrintTool
-} from './printTool.js';
-
-
+//#region Khởi tạo và điều phối công cụ bản đồ 2D
 export function createToolManager({
   map,
   layerConfigs,
@@ -27,15 +18,10 @@ export function createToolManager({
   const measureTool = createMeasureTool(map);
   const selectBoxTool = createSelectBoxTool(map, layerConfigs);
   const printTool = createPrintTool(map, satelliteLayer, scaleLineControl);
-  function closeToolsBeforeLocate() {
+  const geolocationTool = createGeolocationTool(map, () => {
     document.dispatchEvent(new CustomEvent('webgis-tool-activate', { detail: { name: 'geolocation' } }));
-    measureTool.close();
-    selectBoxTool.close();
-    printTool.close();
-    popupTool?.close();
-    if (closeDisplayConfigPanel) closeDisplayConfigPanel();
-  }
-  const geolocationTool = createGeolocationTool(map, closeToolsBeforeLocate);
+    closeAllTools();
+  });
   function closeAllTools() {
     measureTool.close();
     selectBoxTool.close();
@@ -45,39 +31,29 @@ export function createToolManager({
     if (closeDisplayConfigPanel) closeDisplayConfigPanel();
   }
 
+  document.querySelectorAll('[data-tool-action]').forEach(function (item) {
+    item.addEventListener('click', function () {
+      const action = item.dataset.toolAction;
 
-  document
-    .querySelectorAll('[data-tool-action]')
-    .forEach(function (item) {
-      item.addEventListener(
-        'click',
-        function () {
-          const action =
-            item.dataset.toolAction;
+      closeAllTools();
 
-          closeAllTools();
+      if (action === 'measure') {
+        measureTool.open();
+      }
 
-          if (action === 'measure') {
-            measureTool.open();
-          }
+      if (action === 'select-box') {
+        selectBoxTool.open();
 
-          if (action === 'select-box') {
-            selectBoxTool.open();
+        alert('Giữ Ctrl và kéo chuột để chọn đối tượng');
+      }
 
-            alert(
-              'Giữ Ctrl và kéo chuột để chọn đối tượng'
-            );
-          }
+      if (action === 'print-map') {
+        printTool.open();
+      }
 
-          if (action === 'print-map') {
-            printTool.open();
-          }
-
-          closeMenu();
-        }
-      );
+      closeMenu();
     });
-
+  });
 
   return {
     measureTool,
@@ -87,3 +63,4 @@ export function createToolManager({
     closeAllTools
   };
 }
+//#endregion

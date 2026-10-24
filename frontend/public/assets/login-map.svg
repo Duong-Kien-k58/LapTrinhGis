@@ -1,35 +1,56 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="500" height="900" viewBox="0 0 500 900" fill="none">
-<defs><pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M36 0H0V36" stroke="#42756e" stroke-opacity=".18"/></pattern><linearGradient id="water" x1="300" y1="0" x2="170" y2="530" gradientUnits="userSpaceOnUse"><stop stop-color="#3b9c94" stop-opacity=".32"/><stop offset="1" stop-color="#3b9c94" stop-opacity=".08"/></linearGradient></defs>
-<path fill="url(#grid)" d="M0 0h500v900H0z"/>
-<g stroke="#4d8779" stroke-opacity=".3"><path d="M-50 116C66 49 49 208 153 161S273 11 384 83s69 89 169 60"/><path d="M-49 128C74 60 58 224 161 176S273 29 383 99s72 87 170 60"/><path d="M-48 140C82 72 67 240 169 191S273 47 382 115s75 85 170 60"/><path d="M-47 152C90 84 76 256 177 206S273 65 381 131s78 83 170 60"/><path d="M-46 164C98 96 85 272 185 221S273 83 380 147s81 81 170 60"/><path d="M-45 176C106 108 94 288 193 236S273 101 379 163s84 79 170 60"/><path d="M-44 188C114 120 103 304 201 251S273 119 378 179s87 77 170 60"/><path d="M-43 200C122 132 112 320 209 266S273 137 377 195s90 75 170 60"/><path d="M-42 212C130 144 121 336 217 281S273 155 376 211s93 73 170 60"/><path d="M-41 224C138 156 130 352 225 296S273 173 375 227s96 71 170 60"/></g>
-<path d="M368-35c-90 93-138 82-154 154s51 77 27 143-64 61-63 130-60 97-61 191h47c0-94 59-117 59-188s45-74 64-135-42-111-23-143S327 84 409-35Z" fill="url(#water)"/>
-<g transform="translate(38 200) rotate(-17 210 130)"><g fill="#224a43" stroke="#497366"><path d="m35 13 67 1v57H35zM114 14h81v57h-81zM207 14h62v57h-62zM281 14h64v57h-64zM35 83h67v63H35zM114 83h81v63h-81zM207 83h62v63h-62zM281 83h64v63h-64zM35 158h67v62H35zM114 158h81v62h-81zM207 158h62v62h-62zM281 158h64v62h-64z"/></g><g stroke="#70a391" stroke-width="3" stroke-linecap="round"><path d="M22 77h340M22 152h340M108 4v230M201 4v230M275 4v230"/></g><path d="M36 152h165V77h124" stroke="#81ddbd" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="36" cy="152" r="6" fill="#13352f" stroke="#81ddbd" stroke-width="3"/><g transform="translate(201 77)"><circle r="45" fill="#81ddbd" fill-opacity=".06" stroke="#81ddbd" stroke-opacity=".25"/><circle r="26" fill="#81ddbd" fill-opacity=".09" stroke="#81ddbd" stroke-opacity=".3"/><circle r="7" fill="#e7a46b" stroke="#fff3e5" stroke-width="3"/></g><circle cx="325" cy="77" r="5" fill="#81ddbd"/></g>
-<g fill="#8ab9a7" font-family="monospace" font-size="10"><text x="36" y="64">21° 02′ N</text><text x="356" y="410">105° 50′ E</text></g><g stroke="#81b5a0" stroke-opacity=".6"><path d="M42 40v12M36 46h12M443 382v12M437 388h12M65 380v12M59 386h12"/></g><g transform="translate(374 65)" stroke="#a1c6b4"><path d="M0 35V0m0 0-5 12M0 0l5 12"/><text x="-4" y="-9" fill="#a1c6b4" stroke="none" font-family="sans-serif" font-size="10">N</text></g>
-<g stroke="#507f6e" stroke-opacity=".32" stroke-width="1">
-<path d="M-60 495C60 405 88 580 202 500S341 430 550 535"/>
-<path d="M-60 510C60 420 88 595 202 515S341 445 550 550"/>
-<path d="M-60 525C60 435 88 610 202 530S341 460 550 565"/>
-<path d="M-60 540C60 450 88 625 202 545S341 475 550 580"/>
-<path d="M-60 555C60 465 88 640 202 560S341 490 550 595"/>
-<path d="M-60 570C60 480 88 655 202 575S341 505 550 610"/>
-<path d="M-60 585C60 495 88 670 202 590S341 520 550 625"/>
-<path d="M-60 600C60 510 88 685 202 605S341 535 550 640"/>
-<path d="M-60 615C60 525 88 700 202 620S341 550 550 655"/>
-<path d="M-60 630C60 540 88 715 202 635S341 565 550 670"/>
-<path d="M-60 645C60 555 88 730 202 650S341 580 550 685"/>
-<path d="M-60 660C60 570 88 745 202 665S341 595 550 700"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="340" height="600" viewBox="0 0 340 600" fill="none">
+<defs>
+  <radialGradient id="bg"><stop stop-color="#24545a"/><stop offset="1" stop-color="#102e32"/></radialGradient>
+  <linearGradient id="land" x2="230" y2="230" gradientUnits="userSpaceOnUse"><stop stop-color="#527e6a"/><stop offset="1" stop-color="#24504e"/></linearGradient>
+  <linearGradient id="water" x2="170" y2="230" gradientUnits="userSpaceOnUse"><stop stop-color="#99d9d3"/><stop offset="1" stop-color="#4e9caf"/></linearGradient>
+  <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse"><path d="M28 0H0V28" stroke="#a2cfc4" stroke-opacity=".07"/></pattern>
+  <clipPath id="tile"><rect width="230" height="230" rx="6"/></clipPath>
+  <filter id="shadow" x="-50%" y="-100%" width="200%" height="300%"><feGaussianBlur stdDeviation="12"/></filter>
+  <g id="contours" stroke="#c6d9af" stroke-width=".8">
+    <path d="M-20 46C16 8 63 15 84 46S90 99 127 109 182 68 207 92 206 144 253 149"/>
+    <path d="M-20 56C16 18 57 25 75 55S81 109 125 120 185 80 199 102 201 153 253 160"/>
+    <path d="M-20 66C16 28 51 35 66 64S72 119 123 131 188 92 191 112 196 162 253 171"/>
+    <path d="M-20 76C16 38 45 45 57 73S63 129 121 142 191 104 183 122 191 171 253 182"/>
+    <path d="M-20 86C16 48 39 55 48 82S54 139 119 153 194 116 175 132 186 180 253 193"/>
+    <path d="M-20 96C16 58 33 65 39 91S45 149 117 164 197 128 167 142 181 189 253 204"/>
+    <path d="M-20 106C16 68 27 75 30 100S36 159 115 175 200 140 159 152 176 198 253 215"/>
+    <path d="M-20 116C16 78 21 85 21 109S27 169 113 186 203 152 151 162 171 207 253 226"/>
+    <path d="M-20 126C16 88 15 95 12 118S18 179 111 197 206 164 143 172 166 216 253 237"/>
+    <path d="M-20 136C16 98 9 105 3 127S9 189 109 208 209 176 135 182 161 225 253 248"/>
+  </g>
+</defs>
+<path fill="url(#bg)" d="M0 0h340v600H0z"/>
+<path fill="url(#grid)" d="M0 0h340v600H0z"/>
+<g stroke="#7bb6ae" opacity=".14"><circle cx="170" cy="260" r="151"/><circle cx="170" cy="260" r="118"/><path d="M0 260h340M170 95v330" stroke-dasharray="3 7"/></g>
+<ellipse cx="172" cy="364" rx="119" ry="20" fill="#041b20" opacity=".65" filter="url(#shadow)"/>
+<!-- Stacked terrain, hydrography and vector layers in an isometric projection. -->
+<g transform="translate(170 170) matrix(.61 .34 -.61 .34 0 0)">
+  <rect y="94" width="230" height="230" rx="6" fill="#143d42" stroke="#578c87"/>
+  <g transform="translate(0 94)" clip-path="url(#tile)" opacity=".35"><use href="#contours"/></g>
+  <rect y="47" width="230" height="230" rx="6" fill="#285653" fill-opacity=".9" stroke="#75a79a"/>
+  <g transform="translate(0 47)" stroke="#8db6a3" stroke-opacity=".35"><path d="M0 57h230M0 115h230M0 173h230M57 0v230M115 0v230M173 0v230"/></g>
+  <g stroke="#b1d6bb" stroke-opacity=".35" stroke-dasharray="4 5"><path d="M0 0v94M230 0v94M0 230v94M230 230v94"/></g>
+  <rect width="230" height="230" rx="6" fill="url(#land)" stroke="#b3d4b7" stroke-width="1.5"/>
+  <g clip-path="url(#tile)">
+    <path d="m124-10 63 3 5 70-65 12-31-43ZM-10 156l63-26 41 34-15 76H-10Z" fill="#71936c" opacity=".4"/>
+    <g opacity=".47"><use href="#contours"/></g>
+    <path d="M168-10c-44 30-30 54-54 77s-54 7-63 43 38 51 45 77-12 42-20 56" stroke="#204a4e" stroke-width="23"/>
+    <path d="M168-10c-44 30-30 54-54 77s-54 7-63 43 38 51 45 77-12 42-20 56" stroke="url(#water)" stroke-width="14"/>
+    <g fill="#adc59c" fill-opacity=".22" stroke="#c5d7b5" stroke-opacity=".5" stroke-width=".8"><path d="m131 91 26-10 13 31-27 11ZM166 78l23-9 13 31-24 10ZM145 132l27-11 12 28-27 11ZM181 117l24-9 12 28-24 11ZM160 170l27-11 13 31-27 11ZM196 155l25-10 13 31-25 10Z"/></g>
+    <path d="m117 85 53 134M126 129l106-41M140 168l103-41" stroke="#c4cbb2" stroke-width="3" stroke-opacity=".65"/>
+    <path d="m-10 170 40-24 64-6 46-19 45-18 54-39" stroke="#e6d1a2" stroke-width="4"/>
+    <path d="m-10 170 40-24 64-6 46-19 45-18 54-39" stroke="#f5e7c9" stroke-width="1.5"/>
+    <path d="m131 63 9 58 45-18 22 54" stroke="#d3efbd" stroke-width="2" stroke-dasharray="5 4"/>
+    <circle cx="140" cy="121" r="24" fill="#c2efc3" fill-opacity=".14" stroke="#b2e2b8" stroke-opacity=".7"/>
+    <circle cx="140" cy="121" r="13" stroke="#c8edc6" stroke-opacity=".7"/>
+    <circle cx="140" cy="121" r="5" fill="#f3cc8c" stroke="#fff1d8" stroke-width="2"/>
+    <g fill="#d4ead0"><circle cx="131" cy="63" r="3"/><circle cx="207" cy="157" r="3"/></g>
+  </g>
 </g>
-<path d="M181 500C110 569 289 550 298 637s-117 113-79 237l35 40h45c-92-147 45-151 36-277s-132-81-113-137Z" fill="url(#water)"/>
-<g transform="translate(36 525) rotate(12 150 100)">
-<rect x="18" y="15" width="55" height="45" rx="2" fill="#254b3e" stroke="#527d66" stroke-opacity=".65"/>
-<rect x="85" y="15" width="64" height="45" rx="2" fill="#254b3e" stroke="#527d66" stroke-opacity=".65"/>
-<rect x="161" y="15" width="64" height="45" rx="2" fill="#254b3e" stroke="#527d66" stroke-opacity=".65"/>
-<rect x="18" y="72" width="55" height="54" rx="2" fill="#254b3e" stroke="#527d66" stroke-opacity=".65"/>
-<rect x="85" y="72" width="64" height="54" rx="2" fill="#254b3e" stroke="#527d66" stroke-opacity=".65"/>
-<rect x="161" y="72" width="64" height="54" rx="2" fill="#254b3e" stroke="#527d66" stroke-opacity=".65"/>
-<rect x="18" y="138" width="55" height="44" rx="2" fill="#254b3e" stroke="#527d66" stroke-opacity=".65"/>
-<rect x="85" y="138" width="64" height="44" rx="2" fill="#254b3e" stroke="#527d66" stroke-opacity=".65"/>
-<path d="M8 66h230M8 132h230M79 5v190M155 5v190" stroke="#6b9a7e" stroke-width="2"/><path d="M28 132h127V66h65" stroke="#96cf9d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="28" cy="132" r="5" fill="#173d31" stroke="#96cf9d" stroke-width="2"/><circle cx="220" cy="66" r="6" fill="#dba471" stroke="#e9dec7" stroke-width="2"/></g>
-<path d="M250 385c90 55 115 91 51 154s-55 62-41 86" stroke="#91c9a5" stroke-opacity=".6" stroke-width="1.5" stroke-dasharray="4 6"/>
-<g stroke="#8eb79d" stroke-opacity=".5"><path d="M420 508v16m-8-8h16M395 691v12m-6-6h12M49 779v12m-6-6h12"/></g><g fill="#90b29b" font-family="monospace" font-size="10"><text x="365" y="556">105° 50′ E</text><text x="38" y="490">21° 02′ N</text></g>
+<path d="M182 258v-38" stroke="#f0ce97" stroke-width="1.2"/>
+<circle cx="182" cy="216" r="5" fill="#edc58c" stroke="#f8ebd0" stroke-width="2"/>
+<circle cx="182" cy="216" r="11" stroke="#eac58b" stroke-opacity=".3"/>
+<g transform="translate(294 113)"><path d="m0 14 5 20-5-4-5 4Z" fill="#b4d3c6"/><text x="0" y="6" fill="#b4d3c6" font-family="sans-serif" font-size="9" text-anchor="middle">N</text></g>
+<g fill="#9cbfb5" font-family="monospace" font-size="8" letter-spacing="1"><text x="28" y="113">21°02′ N</text><text x="220" y="391">105°50′ E</text></g>
+<g stroke="#aac8bb" stroke-width="1" opacity=".7"><path d="M29 383v5h48v-5M53 383v5M28 134v8m-4-4h8"/></g>
 </svg>

@@ -1,328 +1,904 @@
-import * as Cesium from 'cesium'; // Import toàn bộ thư viện CesiumJS
-import 'cesium/Build/Cesium/Widgets/widgets.css'; // Import CSS giao diện mặc định của Cesium
+//#region Imports
+import * as Cesium from 'cesium';
+import ImageWMS from 'ol/source/ImageWMS.js';
+import TileWMS from 'ol/source/TileWMS.js';
+import { get as getProjection } from 'ol/proj.js';
+//#endregion
 
-window.Cesium = Cesium; // Đưa Cesium ra biến toàn cục để OL-Cesium sử dụng
-
-let ol3d = null; // Lưu đối tượng OL-Cesium dùng chung trong file
-let map2D = null;
-let toggleButton = null; // Lưu nút chuyển đổi 2D/3D
-let homeButton = null;
-let identifyButton = null;
-let buildingsButton = null;
-let waterButton = null;
-let identifyHandler = null;
-let osmBuildings = null;
-let isLoadingBuildings = false;
-let waterEnabled = false;
-let infoPanel = null;
-let infoTimer = null;
-
-/* =========================================================
-   KHỞI TẠO CESIUM
-========================================================= */
-
-export async function createCesiumTool(map) {
-  if (!map) { // Kiểm tra bản đồ OpenLayers đã tồn tại chưa
-    console.error('Không tìm thấy OpenLayers map');
-    return null;
+//#region 1. Đồng bộ cây lớp OpenLayers và Cesium
+// OL-Cesium thêm một lớp động với parents=[]; khi TOC khôi phục hoặc kéo
+// lớp giữa các nhóm, cần tìm lại cha từ cây OpenLayers trước khi gắn listener.
+export function findLayerParents(root, target, ancestors = []) {
+  if (root === target) return ancestors.slice().reverse();
+  const children = root.getLayers?.();
+  if (!children) return null;
+  for (const child of children.getArray()) {
+    const parents = findLayerParents(child, target, [...ancestors, root]);
+    if (parents) return parents;
   }
-  if (ol3d) return ol3d; // Nếu đã khởi tạo rồi thì dùng lại, không tạo mới
+  return null;
+}
 
+export function withCurrentLayerParents(Synchronizer) {
+  return class extends Synchronizer {
+    createSingleLayerCounterparts(layerWithParents) {
+      const root = this.map.getLayerGroup();
+      // OL-Cesium cố ý ẩn root để dừng vẽ 2D khi mở 3D; không kế thừa
+      // visibility/opacity của root, chỉ kế thừa các nhóm dữ liệu thực tế.
+      const parents = findLayerParents(root, layerWithParents.layer)?.filter(parent => parent !== root);
+      return super.createSingleLayerCounterparts({
+        ...layerWithParents,
+        parents: parents ?? layerWithParents.parents,
+      });
+    }
+  };
+}
+//#endregion
+
+//#region 2. Tải ảnh WMS và gửi style bằng POST
+export function wmsPostRequest(src) {
+  const url = new URL(src, typeof location === 'undefined' ? 'http://localhost/' : location.href);
+  const hasStyle = [...url.searchParams.keys()].some(key => key.toUpperCase() === 'SLD_BODY');
+  if (!hasStyle && src.length < 8000) return null;
+  const data = url.searchParams.toString();
+  url.search = '';
+  return { url: url.href, data };
+}
+
+// Dùng Resource để POST vẫn tuân theo hàng đợi và hủy request của Cesium.
+export function loadPostImage(Cesium, spec, request) {
+  const resource = new Cesium.Resource({ url: spec.url, request });
+  const pending = resource.post(spec.data, {
+    responseType: 'blob',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+  });
+  // Cesium yêu cầu undefined khi hàng đợi đầy để thử lại ở frame sau.
+  if (!pending) return undefined;
+  return pending.then(blob => {
+    if (!blob.type?.toLowerCase().startsWith('image/')) throw new Error('GeoServer không trả về ảnh WMS hợp lệ.');
+    const objectUrl = URL.createObjectURL(blob);
+    return Cesium.Resource.fetchImage({ url: objectUrl, preferImageBitmap: true, flipY: true })
+      .finally(() => URL.revokeObjectURL(objectUrl));
+  });
+}
+
+export function wrapWmsProvider(provider, source, map, loadImage) {
+  const originalRequest = provider.requestImage.bind(provider);
+  const imageSource = source instanceof ImageWMS;
+  const tileSource = imageSource ? new TileWMS({
+    url: source.getUrl(), projection: source.getProjection(), params: source.getParams(),
+  }) : source;
+  let revision = source.getRevision();
+  provider.requestImage = function (x, y, level, request) {
+    if (!provider.ready) return originalRequest(x, y, level, request);
+    if (imageSource && revision !== source.getRevision()) {
+      tileSource.setUrl(source.getUrl());
+      tileSource.setParams(source.getParams());
+      revision = source.getRevision();
+    }
+    const projection = getProjection(source.get('olcs_projection')) || source.getProjection() || map.getView().getProjection();
+    const zoom = provider.shouldRequestNextLevel ? level + 1 : level;
+    const url = tileSource.getTileUrlFunction().call(tileSource, [zoom, x, y], 1, projection);
+    if (!url) return originalRequest(x, y, level, request);
+    const spec = wmsPostRequest(url);
+    if (!spec) return originalRequest(x, y, level, request);
+    // Proxy chuyển đổi URL dịch vụ, không đưa SLD dài trở lại query string.
+    if (provider.proxy) spec.url = provider.proxy.getURL(spec.url);
+    return loadImage(spec, request);
+  };
+}
+
+export function withWmsPostRequests(Synchronizer, Cesium) {
+  return class extends Synchronizer {
+    convertLayerToCesiumImageries(layer, projection) {
+      const images = super.convertLayerToCesiumImageries(layer, projection);
+      const source = layer.getSource?.();
+      if (source instanceof TileWMS || source instanceof ImageWMS) {
+        images?.forEach(image => wrapWmsProvider(image.imageryProvider, source, this.map,
+          (spec, request) => loadPostImage(Cesium, spec, request)));
+      }
+      return images;
+    }
+  };
+}
+//#endregion
+
+//#region 3. Tính toán địa hình: lấy mẫu, chiều dài và diện tích
+const ellipsoid = Cesium.Ellipsoid.WGS84;
+
+// Lấy điểm trên địa hình, không lấy mái công trình hoặc mặt phẳng ellipsoid.
+export function pickTerrain(scene, pixel) {
+  const ray = scene.camera.getPickRay(pixel);
+  return ray ? scene.globe.pick(ray, scene) : undefined;
+}
+
+export function samplePath(vertices, targetStep = 20, maxSamples = 4096) {
+  if (vertices.length < 2) throw new Error('Chọn ít nhất hai điểm.');
+  const segments = vertices.slice(1).map((end, index) =>
+    new Cesium.EllipsoidGeodesic(vertices[index], end, ellipsoid));
+  const total = segments.reduce((sum, segment) => sum + segment.surfaceDistance, 0);
+  if (total < .1) throw new Error('Đường quá ngắn. Hãy chọn hai vị trí khác nhau.');
+  const step = Math.max(targetStep, total / (maxSamples - segments.length - 1));
+  const positions = [Cesium.Cartographic.clone(vertices[0])];
+  const distances = [0];
+  let offset = 0;
+  for (const segment of segments) {
+    const count = Math.max(1, Math.ceil(segment.surfaceDistance / step));
+    for (let index = 1; index <= count; index++) {
+      positions.push(segment.interpolateUsingFraction(index / count));
+      distances.push(offset + segment.surfaceDistance * index / count);
+    }
+    offset += segment.surfaceDistance;
+  }
+  return { positions, distances, step };
+}
+
+export async function sampleHeights(provider, positions) {
+  if (!provider?.availability) throw new Error('Địa hình chưa sẵn sàng hoặc không hỗ trợ lấy mẫu cao độ.');
+  // Không thay cao độ lỗi bằng 0: kết quả đo phải xuất phát từ dữ liệu thật.
+  const result = await Cesium.sampleTerrainMostDetailed(provider, positions, true);
+  if (result.some(position => !Number.isFinite(position.height))) {
+    throw new Error('Thiếu cao độ trên tuyến đo. Hãy thử lại khi địa hình tải xong.');
+  }
+  return result;
+}
+
+export function pathStatistics(positions, distances) {
+  let length3D = 0, ascent = 0, descent = 0;
+  for (let index = 1; index < positions.length; index++) {
+    const height = positions[index].height - positions[index - 1].height;
+    length3D += Math.hypot(distances[index] - distances[index - 1], height);
+    ascent += Math.max(0, height);
+    descent += Math.max(0, -height);
+  }
+  return {
+    length3D, horizontal: distances.at(-1), ascent, descent,
+    min: Math.min(...positions.map(point => point.height)),
+    max: Math.max(...positions.map(point => point.height)),
+  };
+}
+
+// Chặn vùng tự cắt trước khi chia lưới, kể cả các cạnh chạm nhau.
+export function validateArea(vertices) {
+  if (vertices.length < 3) throw new Error('Chọn ít nhất ba điểm cho vùng đo.');
+  const center = ellipsoid.cartographicToCartesian(vertices[0]);
+  const inverse = Cesium.Matrix4.inverseTransformation(Cesium.Transforms.eastNorthUpToFixedFrame(center), new Cesium.Matrix4());
+  const points = vertices.map(point => Cesium.Matrix4.multiplyByPoint(inverse, ellipsoid.cartographicToCartesian(point), new Cesium.Cartesian3()));
+  const cross = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  const onSegment = (a, b, p) => Math.abs(cross(a, b, p)) < 1e-6 && p.x >= Math.min(a.x, b.x) && p.x <= Math.max(a.x, b.x) && p.y >= Math.min(a.y, b.y) && p.y <= Math.max(a.y, b.y);
+  for (let index = 0; index < points.length; index++) {
+    const a = points[index], b = points[(index + 1) % points.length];
+    if (Cesium.Cartesian3.distance(a, b) < .1) throw new Error('Các đỉnh vùng đo phải khác nhau.');
+    for (let next = index + 1; next < points.length; next++) {
+      if (next === index + 1 || (index === 0 && next === points.length - 1)) continue;
+      const c = points[next], d = points[(next + 1) % points.length];
+      if ((cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0) ||
+          onSegment(a, b, c) || onSegment(a, b, d) || onSegment(c, d, a) || onSegment(c, d, b)) {
+        throw new Error('Vùng đo tự cắt. Hãy vẽ đường bao không giao nhau.');
+      }
+    }
+  }
+}
+
+export function areaMesh(vertices) {
+  validateArea(vertices);
+  const positions = vertices.map(point => ellipsoid.cartographicToCartesian(point));
+  const sphere = Cesium.BoundingSphere.fromPoints(positions);
+  if (sphere.radius > 100000) throw new Error('Vùng đo quá rộng. Hãy đo từng vùng có bán kính dưới 100 km.');
+  const spacing = Math.max(30, sphere.radius / 24);
+  const geometry = Cesium.PolygonGeometry.createGeometry(Cesium.PolygonGeometry.fromPositions({
+    positions, vertexFormat: Cesium.VertexFormat.POSITION_ONLY,
+    granularity: spacing / ellipsoid.maximumRadius,
+  }));
+  if (!geometry) throw new Error('Vùng đo không hợp lệ.');
+  const values = geometry.attributes.position.values;
+  if (values.length / 3 > 16000) throw new Error('Vùng quá phức tạp. Hãy chia thành các vùng nhỏ hơn.');
+  const samples = [];
+  for (let index = 0; index < values.length; index += 3) {
+    samples.push(ellipsoid.cartesianToCartographic(Cesium.Cartesian3.fromArray(values, index)));
+  }
+  return { positions: samples, indices: geometry.indices, spacing };
+}
+
+export function meshArea(positions, indices) {
+  const points = positions.map(position => ellipsoid.cartographicToCartesian(position));
+  let area = 0;
+  const ab = new Cesium.Cartesian3(), ac = new Cesium.Cartesian3(), cross = new Cesium.Cartesian3();
+  for (let index = 0; index < indices.length; index += 3) {
+    const a = points[indices[index]];
+    Cesium.Cartesian3.subtract(points[indices[index + 1]], a, ab);
+    Cesium.Cartesian3.subtract(points[indices[index + 2]], a, ac);
+    area += Cesium.Cartesian3.magnitude(Cesium.Cartesian3.cross(ab, ac, cross)) / 2;
+  }
+  if (!(area > .01)) throw new Error('Diện tích vùng đo quá nhỏ hoặc các điểm thẳng hàng.');
+  return area;
+}
+
+export const formatDistance = value => value >= 1000 ? `${(value / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} km` : `${value.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} m`;
+export const formatArea = value => value >= 1e6 ? `${(value / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 3 })} km²` : `${value.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} m²`;
+//#endregion
+
+//#region 4. Giao diện đo 3D và mặt cắt địa hình
+export function createCesiumTerrainTools({ ol3d, getTerrain, activate, setInfo, measureButton, profileButton }) {
+  const scene = ol3d.getCesiumScene();
+  const source = new Cesium.CustomDataSource('Phân tích địa hình 3D');
+  ol3d.getDataSources().add(source);
+  const panel = document.createElement('section');
+  panel.className = 'terrain-tool-panel';
+  panel.id = 'terrain-tool-panel';
+  panel.hidden = true;
+  panel.setAttribute('aria-labelledby', 'terrain-tool-title');
+  panel.innerHTML = `
+    <header><div><small>PHÂN TÍCH ĐỊA HÌNH</small><h2 id="terrain-tool-title">Đo 3D</h2></div><button type="button" data-terrain-close aria-label="Đóng phân tích địa hình">×</button></header>
+    <div class="terrain-tool-body">
+      <div class="terrain-tool-tabs" role="group" aria-label="Kiểu đo 3D"><button type="button" data-terrain-mode="distance">Khoảng cách</button><button type="button" data-terrain-mode="area">Diện tích bề mặt</button></div>
+      <p class="terrain-tool-hint" role="status" aria-live="polite"></p>
+      <div class="terrain-draw-actions"><button type="button" data-terrain-finish>Hoàn tất</button><button type="button" data-terrain-undo>Bỏ điểm cuối</button><button type="button" data-terrain-redraw>Vẽ lại</button></div>
+      <div class="terrain-tool-results" hidden></div>
+      <p class="terrain-tool-note">Đo trên địa hình Cesium World Terrain. Cao độ so với ellipsoid WGS84; kết quả xấp xỉ theo độ phân giải địa hình.</p>
+    </div>`;
+  document.querySelector('.map-wrapper').append(panel);
+  const hint = panel.querySelector('.terrain-tool-hint');
+  const results = panel.querySelector('.terrain-tool-results');
+  const finishButton = panel.querySelector('[data-terrain-finish]');
+  const undoButton = panel.querySelector('[data-terrain-undo]');
+  let mode = 'distance', vertices = [], moving = null, handler = null, version = 0, busy = false;
+  let samples = null, cursorEntity = null, plotted = null;
+  const teal = Cesium.Color.fromCssColorString('#82f1d5');
+
+  function updateButtons() {
+    finishButton.disabled = busy || !handler || vertices.length < (mode === 'area' ? 3 : 2);
+    undoButton.disabled = busy || !handler || !vertices.length;
+    panel.querySelectorAll('[data-terrain-mode]').forEach(button => {
+      const selected = button.dataset.terrainMode === mode;
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+  }
+
+  function destroyHandler() {
+    if (handler && !handler.isDestroyed()) handler.destroy();
+    handler = null;
+    scene.canvas.style.cursor = '';
+  }
+
+  function reset() {
+    version++;
+    destroyHandler();
+    source.entities.removeAll();
+    vertices = [];
+    moving = null;
+    samples = null;
+    plotted = null;
+    cursorEntity = null;
+    busy = false;
+    results.replaceChildren();
+    results.hidden = true;
+  }
+
+  function close() {
+    reset();
+    panel.hidden = true;
+    source.show = false;
+    measureButton.classList.remove('active');
+    profileButton.classList.remove('active');
+    measureButton.setAttribute('aria-pressed', 'false');
+    profileButton.setAttribute('aria-pressed', 'false');
+  }
+
+  function positions() {
+    return [...vertices, ...(moving ? [moving] : [])].map(point => Cesium.Ellipsoid.WGS84.cartographicToCartesian(point));
+  }
+
+  function addVertex(point) {
+    source.entities.add({
+      position: Cesium.Ellipsoid.WGS84.cartographicToCartesian(point),
+      point: { pixelSize: 8, color: teal, outlineColor: Cesium.Color.fromCssColorString('#102b35'), outlineWidth: 2, heightReference: Cesium.HeightReference.CLAMP_TO_TERRAIN, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+    });
+  }
+
+  function redrawDraft() {
+    source.entities.removeAll();
+    vertices.forEach(addVertex);
+    source.entities.add({ polyline: {
+      positions: new Cesium.CallbackProperty(() => {
+        const points = positions();
+        if (mode === 'area' && points.length >= 3) points.push(points[0]);
+        return points.length >= 2 ? points : [];
+      }, false),
+      width: 3, material: teal, clampToGround: true, classificationType: Cesium.ClassificationType.TERRAIN,
+    } });
+  }
+
+  function start(nextMode) {
+    if (!ol3d.getEnabled()) return;
+    activate();
+    reset();
+    mode = nextMode;
+    panel.dataset.mode = mode;
+    panel.hidden = false;
+    source.show = true;
+    panel.querySelector('h2').textContent = mode === 'profile' ? 'Mặt cắt địa hình' : mode === 'area' ? 'Đo diện tích bề mặt' : 'Đo khoảng cách 3D';
+    panel.querySelector('.terrain-tool-tabs').hidden = mode === 'profile';
+    panel.querySelector('[data-terrain-finish]').textContent = mode === 'profile' ? 'Tạo mặt cắt' : 'Tính kết quả';
+    panel.querySelector('[data-terrain-redraw]').textContent = mode === 'profile' ? 'Vẽ tuyến mới' : 'Đo lại';
+    panel.querySelector('.terrain-tool-note').textContent = mode === 'profile'
+      ? 'Biểu đồ cao độ theo khoảng cách ngang, lấy mẫu từ Cesium World Terrain. Độ dốc tính trên từng đoạn lấy mẫu; cao độ so với ellipsoid WGS84.'
+      : 'Đo bám địa hình Cesium World Terrain, không đo theo mái công trình. Kết quả xấp xỉ theo độ phân giải địa hình.';
+    measureButton.classList.toggle('active', mode !== 'profile');
+    profileButton.classList.toggle('active', mode === 'profile');
+    measureButton.setAttribute('aria-pressed', String(mode !== 'profile'));
+    profileButton.setAttribute('aria-pressed', String(mode === 'profile'));
+    hint.textContent = mode === 'area'
+      ? 'Click ít nhất 3 đỉnh tạo vùng. Chuột phải hoặc Enter để tính diện tích bề mặt.'
+      : mode === 'profile'
+        ? 'Click ít nhất 2 điểm để vẽ tuyến mặt cắt. Chuột phải hoặc Enter để tạo biểu đồ cao độ.'
+        : 'Click ít nhất 2 điểm trên tuyến cần đo. Chuột phải hoặc Enter để tính chiều dài bám địa hình.';
+    setInfo(mode === 'profile' ? 'Vẽ tuyến mặt cắt trên địa hình.' : 'Đo 3D: chọn các điểm trên địa hình.');
+    redrawDraft();
+    handler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
+    scene.canvas.style.cursor = 'crosshair';
+    scene.canvas.focus({ preventScroll: true });
+    handler.setInputAction(event => {
+      const position = pickTerrain(scene, event.position);
+      if (!position) { hint.textContent = 'Hãy chọn điểm trên địa hình, không chọn bầu trời.'; return; }
+      const point = Cesium.Cartographic.fromCartesian(position);
+      if (vertices.length && Cesium.Cartesian3.distance(position, Cesium.Ellipsoid.WGS84.cartographicToCartesian(vertices.at(-1))) < .1) return;
+      if (vertices.length >= 64) { hint.textContent = 'Tối đa 64 đỉnh. Hãy hoàn tất hoặc vẽ tuyến ngắn hơn.'; return; }
+      vertices.push(point);
+      moving = null;
+      addVertex(point);
+      hint.textContent = `Đã chọn ${vertices.length} điểm · Chuột phải / Enter để hoàn tất · Backspace để bỏ điểm cuối.`;
+      updateButtons();
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+    handler.setInputAction(event => {
+      if (!vertices.length) return;
+      const position = pickTerrain(scene, event.endPosition);
+      moving = position ? Cesium.Cartographic.fromCartesian(position) : null;
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+    handler.setInputAction(finish, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+    updateButtons();
+  }
+
+  function undo() {
+    if (!handler || busy) return;
+    vertices.pop();
+    moving = null;
+    redrawDraft();
+    hint.textContent = `Đã chọn ${vertices.length} điểm. Tiếp tục click để vẽ.`;
+    updateButtons();
+  }
+
+  async function finish() {
+    if (finishButton.disabled || busy) return;
+    const requestVersion = ++version;
+    const chosen = vertices.map(point => Cesium.Cartographic.clone(point));
+    busy = true;
+    destroyHandler();
+    moving = null;
+    redrawDraft();
+    updateButtons();
+    hint.textContent = 'Đang lấy mẫu cao độ chi tiết trên địa hình…';
+    try {
+      const provider = await getTerrain();
+      if (requestVersion !== version || !ol3d.getEnabled()) return;
+      if (mode === 'area') {
+        const mesh = areaMesh(chosen);
+        await sampleHeights(provider, mesh.positions);
+        if (requestVersion !== version || !ol3d.getEnabled()) return;
+        const area = meshArea(mesh.positions, mesh.indices);
+        results.innerHTML = `<div class="terrain-result-main"><span>Diện tích bề mặt địa hình</span><strong>${formatArea(area)}</strong></div><p>Lưới ${mesh.positions.length.toLocaleString('vi-VN')} điểm · bước lưới khoảng ${formatDistance(mesh.spacing)}</p>`;
+        source.entities.add({ polygon: { hierarchy: chosen.map(point => Cesium.Ellipsoid.WGS84.cartographicToCartesian(point)), material: teal.withAlpha(.22), classificationType: Cesium.ClassificationType.TERRAIN } });
+        setInfo(`Diện tích bề mặt 3D: ${formatArea(area)}`);
+      } else {
+        const path = samplePath(chosen);
+        await sampleHeights(provider, path.positions);
+        if (requestVersion !== version || !ol3d.getEnabled()) return;
+        const stats = pathStatistics(path.positions, path.distances);
+        source.entities.removeAll();
+        source.entities.add({ polyline: {
+          positions: path.positions.map(point => Cesium.Ellipsoid.WGS84.cartographicToCartesian(point)),
+          width: 4, material: teal, clampToGround: true, classificationType: Cesium.ClassificationType.TERRAIN,
+        } });
+        addVertex(path.positions[0]);
+        addVertex(path.positions.at(-1));
+        if (mode === 'profile') {
+          samples = path;
+          renderProfile(stats);
+          setInfo(`Mặt cắt: cao độ ${stats.min.toFixed(1)} – ${stats.max.toFixed(1)} m · Tổng lên ${formatDistance(stats.ascent)} · Tổng xuống ${formatDistance(stats.descent)}`);
+        } else {
+          renderDistance(stats);
+          setInfo(`Khoảng cách 3D: ${formatDistance(stats.length3D)} · Chiều dài ngang ${formatDistance(stats.horizontal)}`);
+        }
+      }
+      results.hidden = false;
+      hint.textContent = mode === 'profile'
+        ? 'Đã tạo mặt cắt. Rê trên biểu đồ hoặc kéo thanh trượt để xem cao độ, độ dốc và vị trí trên bản đồ.'
+        : mode === 'area'
+          ? 'Đã tính diện tích bề mặt. Chọn Đo lại để đo vùng khác.'
+          : 'Đã tính chiều dài bám địa hình. Chọn Đo lại để đo tuyến khác.';
+    } catch (error) {
+      if (requestVersion !== version) return;
+      hint.textContent = `Không thể tính kết quả: ${error.message} Chọn ${mode === 'profile' ? 'Vẽ tuyến mới' : 'Đo lại'} để thử lại.`;
+    } finally {
+      if (requestVersion === version) { busy = false; updateButtons(); }
+    }
+  }
+
+  //#region 4.1. Kết quả đo khoảng cách: chỉ hiển thị số đo
+  function renderDistance(stats) {
+    results.innerHTML = `<div class="terrain-result-main"><span>Chiều dài bám địa hình</span><strong>${formatDistance(stats.length3D)}</strong></div>
+      <div class="terrain-result-stats"><span>Chiều dài ngang <b>${formatDistance(stats.horizontal)}</b></span></div>
+      <p>Tuyến đo gồm ${vertices.length} điểm đã chọn. Chiều dài bám địa hình tính cả thay đổi cao độ dọc tuyến.</p>`;
+  }
+  //#endregion
+
+  //#region 4.2. Mặt cắt: biểu đồ cao độ, lên/xuống và độ dốc dọc tuyến
+  function renderProfile(stats) {
+    const { positions: points, distances } = samples;
+    const width = 640, height = 224, left = 58, right = 18, top = 16, bottom = 36;
+    const range = Math.max(10, stats.max - stats.min);
+    const min = stats.min - range * .1, max = stats.max + range * .1;
+    const x = distance => left + (width - left - right) * distance / distances.at(-1);
+    const y = value => top + (height - top - bottom) * (max - value) / (max - min);
+    const coords = points.map((point, index) => `${x(distances[index]).toFixed(2)},${y(point.height).toFixed(2)}`);
+    let grid = '';
+    for (let index = 0; index <= 4; index++) {
+      const level = min + (max - min) * index / 4;
+      grid += `<line x1="${left}" x2="${width - right}" y1="${y(level)}" y2="${y(level)}" class="profile-grid"/><text x="${left - 9}" y="${y(level) + 4}" text-anchor="end">${Math.round(level)}</text>`;
+      const distance = distances.at(-1) * index / 4;
+      grid += `<text x="${x(distance)}" y="${height - 12}" text-anchor="${index === 0 ? 'start' : index === 4 ? 'end' : 'middle'}">${formatDistance(distance)}</text>`;
+    }
+    results.innerHTML = `<div class="terrain-result-main"><span>Khoảng cao độ địa hình</span><strong>${stats.min.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} – ${stats.max.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} m</strong></div>
+      <div class="terrain-result-stats"><span>Tuyến ngang <b>${formatDistance(stats.horizontal)}</b></span><span>Tổng lên <b>+${formatDistance(stats.ascent)}</b></span><span>Tổng xuống <b>−${formatDistance(stats.descent)}</b></span></div>
+      <div class="terrain-profile-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Mặt cắt cao độ địa hình theo khoảng cách ngang, đơn vị mét">${grid}
+      <text x="8" y="12">h (m)</text><path class="profile-fill" d="M${left},${height - bottom} L${coords.join(' L')} L${width - right},${height - bottom} Z"/>
+      <polyline class="profile-line" points="${coords.join(' ')}"/><line data-profile-cursor x1="${left}" x2="${left}" y1="${top}" y2="${height - bottom}"/><circle data-profile-dot cx="${left}" cy="${y(points[0].height)}" r="4"/></svg></div>
+      <label class="profile-slider-label" for="terrain-profile-slider">Vị trí trên tuyến <output id="terrain-profile-readout"></output></label>
+      <input id="terrain-profile-slider" type="range" min="0" max="${points.length - 1}" step="1" value="0" aria-describedby="terrain-profile-readout">
+      <p>${points.length.toLocaleString('vi-VN')} mẫu cao độ · khoảng cách lấy mẫu tối đa ${formatDistance(Math.max(...distances.slice(1).map((value, index) => value - distances[index])))}. Độ dốc dương khi đi lên, âm khi đi xuống theo chiều vẽ tuyến.</p>`;
+    plotted = { x, y };
+    const chart = results.querySelector('.terrain-profile-chart');
+    chart.addEventListener('pointermove', event => {
+      const rect = chart.getBoundingClientRect();
+      const at = Math.max(0, Math.min(1, ((event.clientX - rect.left) * width / rect.width - left) / (width - left - right)));
+      const distance = at * distances.at(-1);
+      let low = 0, high = distances.length - 1;
+      while (low < high) { const middle = (low + high) >> 1; if (distances[middle] < distance) low = middle + 1; else high = middle; }
+      updateCursor(low);
+    });
+    results.querySelector('input').addEventListener('input', event => updateCursor(Number(event.target.value)));
+    updateCursor(0);
+  }
+
+  function updateCursor(index) {
+    if (!samples || !plotted) return;
+    const point = samples.positions[index], distance = samples.distances[index];
+    const { x, y } = plotted;
+    results.querySelector('[data-profile-cursor]').setAttribute('x1', x(distance));
+    results.querySelector('[data-profile-cursor]').setAttribute('x2', x(distance));
+    results.querySelector('[data-profile-dot]').setAttribute('cx', x(distance));
+    results.querySelector('[data-profile-dot]').setAttribute('cy', y(point.height));
+    results.querySelector('input').value = index;
+    const end = Math.max(1, index);
+    const run = samples.distances[end] - samples.distances[end - 1];
+    const slope = run > 0 ? (samples.positions[end].height - samples.positions[end - 1].height) / run * 100 : 0;
+    results.querySelector('output').textContent = `${formatDistance(distance)} · h = ${point.height.toFixed(1)} m · Dốc đoạn: ${slope > 0 ? '+' : ''}${slope.toFixed(1)}%`;
+    const position = Cesium.Ellipsoid.WGS84.cartographicToCartesian(point);
+    if (!cursorEntity) cursorEntity = source.entities.add({ position, point: { pixelSize: 12, color: Cesium.Color.YELLOW, outlineColor: Cesium.Color.BLACK, outlineWidth: 2, heightReference: Cesium.HeightReference.CLAMP_TO_TERRAIN, disableDepthTestDistance: Number.POSITIVE_INFINITY } });
+    else cursorEntity.position = position;
+    scene.requestRender();
+  }
+  //#endregion
+
+  panel.querySelector('[data-terrain-close]').addEventListener('click', close);
+  panel.querySelector('[data-terrain-redraw]').addEventListener('click', () => start(mode));
+  undoButton.addEventListener('click', undo);
+  finishButton.addEventListener('click', finish);
+  panel.querySelectorAll('[data-terrain-mode]').forEach(button => button.addEventListener('click', () => start(button.dataset.terrainMode)));
+  document.addEventListener('keydown', event => {
+    if (panel.hidden || !ol3d.getEnabled() || event.target.closest('input, select, textarea, [contenteditable="true"]')) return;
+    if (event.key === 'Escape') { event.preventDefault(); close(); }
+    if (event.key === 'Enter' && (event.target === document.body || event.target === scene.canvas)) { event.preventDefault(); finish(); }
+    if (event.key === 'Backspace') { event.preventDefault(); undo(); }
+  });
+  return { start, close };
+}
+//#endregion
+
+//#region 5. Khởi tạo, giao diện và điều khiển bản đồ 3D
+//#region 5.1. Trạng thái và cấu hình dùng chung
+let ol3d = null, map2D = null, toggleButton = null, identifyHandler = null;
+let markerSource, marker, infoPanel, headerInfo, terrainTools, terrainPromise;
+let osmBuildings = null, buildingsLoading = false, buildingsWanted = false;
+let identifySequence = 0;
+let lastTileError = 0, effectsPanel, messageTimer;
+let selectedLocation = null;
+const buttons = {};
+const svg = path => `<svg viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
+//#endregion
+
+//#region 5.2. Khởi tạo Cesium và nguồn địa hình
+export async function createCesiumTool(map) {
+  if (!map || ol3d) return ol3d;
+  window.Cesium = Cesium;
   map2D = map;
-
-  const { default: OLCesium } = await import('olcs'); // Import OL-Cesium theo kiểu động để tránh lỗi khi load ban đầu
-  Cesium.Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_ION_TOKEN; // Lấy token Cesium ion từ file .env
-  ol3d = new OLCesium({ map }); // Kết nối bản đồ OpenLayers với Cesium
-
-  const scene = ol3d.getCesiumScene(); // Lấy scene 3D của Cesium để cấu hình địa hình, ánh sáng
-  setTerrainOptions();
-  // Giữ ảnh nền sáng, tránh cảnh ban đêm làm công trình 3D gần như không nhìn thấy.
+  const { default: OLCesium, RasterSynchronizer, VectorSynchronizer, OverlaySynchronizer } = await import('olcs');
+  const GroupRasterSynchronizer = withCurrentLayerParents(withWmsPostRequests(RasterSynchronizer, Cesium));
+  const GroupVectorSynchronizer = withCurrentLayerParents(VectorSynchronizer);
+  Cesium.Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_ION_TOKEN;
+  ol3d = new OLCesium({
+    map,
+    stopOpenLayersEventsPropagation: true,
+    createSynchronizers: (olMap, scene) => [
+      new GroupRasterSynchronizer(olMap, scene),
+      new GroupVectorSynchronizer(olMap, scene),
+      new OverlaySynchronizer(olMap, scene),
+    ],
+  });
+  const scene = ol3d.getCesiumScene();
   scene.globe.enableLighting = false;
+  scene.globe.showWaterEffect = false;
   scene.globe.depthTestAgainstTerrain = true;
-  ol3d.setEnabled(false); // Ban đầu vẫn để bản đồ ở chế độ 2D
-  createToggleButton(); // Tạo nút chuyển đổi 2D/3D trên giao diện
-  console.log('Cesium + World Terrain đã được khởi tạo');
-  return ol3d; // Trả đối tượng OL-Cesium để nơi khác có thể dùng tiếp
+  scene.canvas.tabIndex = 0;
+  markerSource = new Cesium.CustomDataSource('Điểm tra cứu 3D');
+  ol3d.getDataSources().add(markerSource);
+  // Tải water mask một lần, không thay địa hình mỗi khi bật hiệu ứng.
+  getTerrainProvider().catch(() => { if (is3DEnabled()) showInfo('Không tải được địa hình. Kiểm tra kết nối và quyền Cesium ion.'); });
+  createUI();
+  // Tọa độ WGS84/VN2000 cũ vẫn cập nhật theo con trỏ trong chế độ 3D.
+  const readoutHandler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
+  readoutHandler.setInputAction(event => {
+    if (!is3DEnabled()) return;
+    const position = pickTerrain(scene, event.endPosition);
+    if (!position) return;
+    const point = Cesium.Cartographic.fromCartesian(position);
+    document.dispatchEvent(new CustomEvent('webgis-coordinate-update', { detail: {
+      longitude: Cesium.Math.toDegrees(point.longitude), latitude: Cesium.Math.toDegrees(point.latitude),
+    } }));
+  }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+  terrainTools = createCesiumTerrainTools({
+    ol3d, getTerrain: getTerrainProvider, activate: activateAnalysis, setInfo: setHeaderInfo,
+    measureButton: buttons.measure, profileButton: buttons.profile,
+  });
+  document.addEventListener('webgis-tool-activate', event => {
+    if (event.detail?.name !== 'cesium') stopAnalysis();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && identifyHandler) { stopIdentify(); setHeaderInfo('Tra cứu 3D đã tắt.'); }
+  });
+  return ol3d;
 }
 
-/* =========================================================
-   TẠO NÚT 2D / 3D
-========================================================= */
+function getTerrainProvider() {
+  if (!terrainPromise) terrainPromise = Cesium.createWorldTerrainAsync({ requestVertexNormals: true, requestWaterMask: true })
+    .then(provider => { ol3d.getCesiumScene().terrainProvider = provider; return provider; })
+    .catch(error => { terrainPromise = null; throw error; });
+  return terrainPromise;
+}
 
-function createToggleButton() {
-  if (toggleButton) return; // Nếu nút đã tồn tại thì không tạo lại
-  toggleButton = document.createElement('button'); // Tạo nút bấm chuyển chế độ
-  toggleButton.type = 'button';
-  toggleButton.id = 'cesium-toggle-btn';
-  toggleButton.className = 'map-control-btn cesium-toggle-btn'; // Gắn class để CSS thiết kế giống các nút control khác
-  toggleButton.textContent = '3D'; // Ban đầu đang ở 2D nên nút hiển thị 3D
-  toggleButton.title = 'Chuyển chế độ 2D / 3D';
-  const container = document.createElement('div'); // Tạo khung chứa nút
+//#endregion
+
+//#region 5.3. Nút điều khiển và panel
+function button(name, label, title, action) {
+  const element = document.createElement('button');
+  element.id = `cesium-${name}-btn`;
+  element.type = 'button';
+  element.className = 'map-control-btn cesium-tool-btn';
+  element.innerHTML = label;
+  element.title = title;
+  element.setAttribute('aria-label', title);
+  element.hidden = true;
+  element.addEventListener('click', action);
+  buttons[name] = element;
+  return element;
+}
+
+function pressed(element, enabled) {
+  element.classList.toggle('active', enabled);
+  element.setAttribute('aria-pressed', String(enabled));
+}
+
+function createUI() {
+  const container = document.createElement('div');
   container.id = 'cesium-toggle-control';
-  container.className = 'map-control-group cesium-toggle-control'; // Class dùng để định vị nút bên phải bản đồ
-  container.appendChild(toggleButton);
-  createThreeDButtons(container);
-  const mapWrapper = document.querySelector('.map-wrapper') || document.body; // Ưu tiên gắn vào khung bản đồ
-  const controls = document.getElementById('primary-map-controls');
-  if (controls) controls.insertBefore(container, controls.querySelector('.ol-zoom'));
-  else mapWrapper.appendChild(container);
-  createInfoPanel(mapWrapper);
-  toggleButton.addEventListener('click', toggle3D); // Bấm nút thì chuyển đổi giữa 2D và 3D
-}
-
-function createToolButton(id, label, title, onClick) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.id = id;
-  button.className = 'map-control-btn cesium-tool-btn';
-  button.innerHTML = label;
-  button.title = title;
-  button.setAttribute('aria-label', title);
-  button.hidden = true;
-  button.addEventListener('click', onClick);
-  return button;
-}
-
-function createThreeDButtons(container) {
-  homeButton = createToolButton(
-    'cesium-home-btn',
-    '<svg viewBox="0 0 24 24"><path d="m3 11 9-8 9 8v10H3z"/><path d="M9 21v-6h6v6"/></svg>',
-    'Bay về vị trí mặc định 3D',
-    flyToDefaultView
+  container.className = 'map-control-group cesium-toggle-control';
+  toggleButton = document.createElement('button');
+  toggleButton.id = 'cesium-toggle-btn';
+  toggleButton.type = 'button';
+  toggleButton.className = 'map-control-btn cesium-toggle-btn';
+  toggleButton.textContent = '3D';
+  toggleButton.title = 'Chuyển sang chế độ 3D';
+  toggleButton.setAttribute('aria-label', toggleButton.title);
+  toggleButton.addEventListener('click', toggle3D);
+  container.append(toggleButton);
+  container.append(
+    button('reset', svg('<path d="m12 3 6 17-6-4-6 4Z"/><path d="M12 3v13"/>'), 'Đưa hướng nhìn về Bắc, giữ nguyên vị trí và độ zoom', resetViewDirection),
+    button('identify', svg('<circle cx="12" cy="12" r="6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>'), 'Tra cứu vị trí và cao độ 3D', toggleIdentify),
+    button('buildings', svg('<path d="M4 21V5h11v16M15 21V2h5v19M8 9h3M8 13h3M8 17h3M17 6h1M17 10h1M17 14h1"/>'), 'Bật công trình OSM 3D theo chiều cao', () => setBuildings(!buildingsWanted)),
+    button('effects', svg('<path d="M3 8c2 2 4 2 6 0s4-2 6 0 4 2 6 0M3 13c2 2 4 2 6 0s4-2 6 0 4 2 6 0M3 18c2 2 4 2 6 0s4-2 6 0 4 2 6 0"/>'), 'Hiệu ứng cảnh 3D', () => togglePanel(effectsPanel, buttons.effects)),
+    button('zoom-in', '+', 'Phóng to bản đồ 3D', () => zoomCamera(1)),
+    button('zoom-out', '−', 'Thu nhỏ bản đồ 3D', () => zoomCamera(-1)),
+    button('measure', svg('<path d="m3 16 13-13 5 5L8 21zM7 12l3 3M11 8l3 3M15 4l3 3"/>'), 'Đo khoảng cách và diện tích bề mặt 3D', () => terrainTools.start('distance')),
+    button('profile', svg('<path d="M3 3v18h18M5 17l4-7 4 4 4-9 4 4M9 21v-3M15 21v-3"/>'), 'Vẽ tuyến xem mặt cắt địa hình', () => terrainTools.start('profile')),
   );
-  identifyButton = createToolButton(
-    'cesium-identify-btn',
-    '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>',
-    'Bật/tắt tra cứu tọa độ và cao độ 3D',
-    toggleIdentify
-  );
-  buildingsButton = createToolButton(
-    'cesium-buildings-btn',
-    '<svg viewBox="0 0 24 24"><path d="M4 21V5h11v16M15 21V2h5v19M8 9h3M8 13h3M8 17h3M17 6h1M17 10h1M17 14h1"/></svg>',
-    'Bật/tắt công trình OSM 3D',
-    toggleOsmBuildings
-  );
-  waterButton = createToolButton(
-    'cesium-water-btn',
-    '<svg viewBox="0 0 24 24"><path d="M3 8c2 2 4 2 6 0s4-2 6 0 4 2 6 0M3 13c2 2 4 2 6 0s4-2 6 0 4 2 6 0M3 18c2 2 4 2 6 0s4-2 6 0 4 2 6 0"/></svg>',
-    'Bật/tắt hiệu ứng nước',
-    toggleWaterEffect
-  );
-  container.append(homeButton, identifyButton, buildingsButton, waterButton);
-}
-
-function createInfoPanel(mapWrapper) {
+  pressed(buttons.buildings, false);
+  document.getElementById('primary-map-controls').append(container);
+  headerInfo = document.createElement('div');
+  headerInfo.id = 'cesium-header-info';
+  headerInfo.hidden = true;
+  headerInfo.setAttribute('role', 'status');
+  headerInfo.setAttribute('aria-live', 'polite');
+  headerInfo.innerHTML = `<div class="cesium-location-heading">${svg('<path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.5"/>')}<span>Điểm chọn 3D</span><small data-location-surface>WGS84</small></div>
+    <div class="cesium-location-values"><div><span>Vĩ độ</span><output data-location-lat>—</output></div><div><span>Kinh độ</span><output data-location-lon>—</output></div><div><span>Cao độ <small>m</small></span><output data-location-height>—</output></div></div>
+    <p class="cesium-location-hint">Bật tra cứu rồi click bản đồ để chọn điểm.</p>`;
+  document.querySelector('.workspace-header .map-readout').before(headerInfo);
   infoPanel = document.createElement('div');
   infoPanel.id = 'cesium-info-panel';
   infoPanel.className = 'cesium-info-panel';
-  infoPanel.setAttribute('role', 'status');
   infoPanel.hidden = true;
-  mapWrapper.appendChild(infoPanel);
-}
-
-function setTerrainOptions() {
-  if (!ol3d) return;
-  ol3d.getCesiumScene().setTerrain(Cesium.Terrain.fromWorldTerrain({
-    requestVertexNormals: true,
-    requestWaterMask: waterEnabled
-  }));
-}
-
-function setThreeDButtonsVisible(enabled) {
-  [homeButton, identifyButton, buildingsButton, waterButton].filter(Boolean).forEach(button => {
-    button.hidden = !enabled;
-  });
-  if (!enabled) {
-    stopIdentify();
-    hideInfo();
-  }
-}
-
-function flyToDefaultView() {
-  if (!ol3d?.getEnabled()) return;
-  ol3d.getCesiumScene().camera.flyTo({
-    destination: Cesium.Cartesian3.fromDegrees(105.8, 21.04, 1500000),
-    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-55), roll: 0 },
-    duration: 1.5
+  infoPanel.setAttribute('role', 'status');
+  document.querySelector('.map-wrapper').append(infoPanel);
+  effectsPanel = createPanel('cesium-effects-panel', 'Hiệu ứng cảnh 3D', `
+    <label class="cesium-option"><span>Mặt nước chuyển động<small>Hiển thị tại vùng có water mask</small></span><input type="checkbox" data-effect="water"></label>
+    <label class="cesium-option"><span>Chiếu sáng địa hình<small>Ánh sáng theo hướng nhìn</small></span><input type="checkbox" data-effect="lighting"></label>
+    <label class="cesium-option"><span>Sương khí quyển</span><input type="checkbox" data-effect="fog" checked></label>
+    <label class="cesium-option"><span>Khí quyển quanh Trái Đất</span><input type="checkbox" data-effect="atmosphere" checked></label>`);
+  effectsPanel.querySelectorAll('input').forEach(input => input.addEventListener('change', () => setEffect(input.dataset.effect, input.checked)));
+  ol3d.getCesiumScene().preRender.addEventListener(() => {
+    const scene = ol3d.getCesiumScene();
+    if (scene.globe.enableLighting && scene.light instanceof Cesium.DirectionalLight) {
+      scene.light.direction = Cesium.Cartesian3.negate(Cesium.Cartesian3.normalize(scene.camera.positionWC, new Cesium.Cartesian3()), new Cesium.Cartesian3());
+    }
   });
 }
 
-function flyToBuildingsView() {
-  if (!ol3d?.getEnabled()) return;
-  ol3d.getCesiumScene().camera.flyTo({
-    // Bay đủ gần để mô hình công trình được tải ở mức chi tiết dễ quan sát.
-    destination: Cesium.Cartesian3.fromDegrees(105.852, 21.028, 900),
-    orientation: { heading: Cesium.Math.toRadians(20), pitch: Cesium.Math.toRadians(-28), roll: 0 },
-    duration: 1.8
+function createPanel(id, title, body) {
+  const panel = document.createElement('section');
+  panel.id = id;
+  panel.className = 'cesium-options-panel';
+  panel.hidden = true;
+  panel.setAttribute('aria-label', title);
+  panel.innerHTML = `<header><h2>${title}</h2><button type="button" aria-label="Đóng ${title.toLowerCase()}">×</button></header><div class="cesium-options-body">${body}</div>`;
+  panel.querySelector('header button').addEventListener('click', () => {
+    const control = buttons.effects;
+    panel.hidden = true;
+    control.setAttribute('aria-expanded', 'false');
+    control.focus();
   });
+  document.querySelector('.map-wrapper').append(panel);
+  return panel;
 }
 
-function showInfo(message, duration = 4500) {
-  if (!infoPanel) return;
-  clearTimeout(infoTimer);
+function togglePanel(panel, control) {
+  if (!is3DEnabled()) return;
+  const open = panel.hidden;
+  effectsPanel.hidden = true;
+  buttons.effects.setAttribute('aria-expanded', 'false');
+  panel.hidden = !open;
+  control.setAttribute('aria-expanded', String(open));
+  if (open) panel.querySelector('header button').focus();
+}
+
+//#endregion
+
+//#region 5.4. Điều phối công cụ và thông báo
+function activateAnalysis() {
+  stopIdentify();
+  effectsPanel.hidden = true;
+  buttons.effects.setAttribute('aria-expanded', 'false');
+  document.dispatchEvent(new CustomEvent('webgis-tool-activate', { detail: { name: 'cesium' } }));
+}
+
+function stopAnalysis() {
+  stopIdentify();
+  terrainTools?.close();
+  if (effectsPanel) effectsPanel.hidden = true;
+  buttons.effects?.setAttribute('aria-expanded', 'false');
+}
+
+function setHeaderInfo(message) {
+  // Hướng dẫn công cụ không ghi đè tọa độ điểm đang chọn.
+  if (!selectedLocation) headerInfo.querySelector('.cesium-location-hint').textContent = message;
+  headerInfo.hidden = !is3DEnabled();
+}
+
+function setLocationInfo(point, surface, heightState = 'ready') {
+  selectedLocation = point;
+  headerInfo.classList.add('has-location');
+  headerInfo.querySelector('[data-location-lat]').textContent = `${Cesium.Math.toDegrees(point.latitude).toFixed(6)}°`;
+  headerInfo.querySelector('[data-location-lon]').textContent = `${Cesium.Math.toDegrees(point.longitude).toFixed(6)}°`;
+  const height = headerInfo.querySelector('[data-location-height]');
+  height.textContent = heightState === 'loading' ? 'Đang tải…' : heightState === 'error' ? 'Chưa có' : point.height.toFixed(1);
+  height.dataset.state = heightState;
+  headerInfo.querySelector('[data-location-surface]').textContent = surface;
+  headerInfo.hidden = !is3DEnabled();
+}
+
+function showInfo(message) {
   infoPanel.textContent = message;
   infoPanel.hidden = false;
-  infoTimer = setTimeout(hideInfo, duration);
+  clearTimeout(messageTimer);
+  messageTimer = setTimeout(() => { infoPanel.hidden = true; }, 6000);
 }
 
-function hideInfo() {
-  clearTimeout(infoTimer);
-  infoTimer = null;
-  if (infoPanel) infoPanel.hidden = true;
+//#endregion
+
+//#region 5.5. Tra cứu vị trí và cao độ
+function stopIdentify() {
+  identifySequence++;
+  if (identifyHandler && !identifyHandler.isDestroyed()) identifyHandler.destroy();
+  identifyHandler = null;
+  if (buttons.identify) pressed(buttons.identify, false);
+  if (ol3d) ol3d.getCesiumScene().canvas.style.cursor = '';
 }
 
 function toggleIdentify() {
-  if (!ol3d?.getEnabled()) return;
-  if (identifyHandler) {
-    stopIdentify();
-    hideInfo();
-    return;
-  }
+  if (!is3DEnabled()) return;
+  if (identifyHandler) { stopIdentify(); return; }
+  activateAnalysis();
+  terrainTools.close();
   const scene = ol3d.getCesiumScene();
-  if (!scene.pickPositionSupported) {
-    showInfo('Trình duyệt không hỗ trợ tra cứu vị trí 3D.');
-    return;
-  }
   identifyHandler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
-  identifyHandler.setInputAction(function (event) {
-    const position = scene.pickPosition(event.position);
-    if (!Cesium.defined(position)) {
-      showInfo('Không xác định được vị trí tại điểm đã chọn.');
-      return;
-    }
+  identifyHandler.setInputAction(async event => {
+    const request = ++identifySequence;
+    const picked = scene.pick(event.position);
+    let position;
+    // Ưu tiên depth cho công trình; pin và đường đo không thay thế mặt đất.
+    if (picked instanceof Cesium.Cesium3DTileFeature && scene.pickPositionSupported) position = scene.pickPosition(event.position);
+    position ||= pickTerrain(scene, event.position);
+    if (!position) { setHeaderInfo('Không có bề mặt tại đây. Hãy click lên địa hình hoặc công trình.'); return; }
     const cartographic = Cesium.Cartographic.fromCartesian(position);
-    const longitude = Cesium.Math.toDegrees(cartographic.longitude).toFixed(6);
-    const latitude = Cesium.Math.toDegrees(cartographic.latitude).toFixed(6);
-    const height = cartographic.height.toFixed(1);
-    showInfo(`Kinh độ: ${longitude} | Vĩ độ: ${latitude} | Cao độ: ${height} m`);
+    if (!marker) marker = markerSource.entities.add({
+      position,
+      billboard: { image: `${import.meta.env.BASE_URL}assets/map-location-pin.svg`, width: 32, height: 42, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+    });
+    else marker.position = position;
+    const building = picked instanceof Cesium.Cesium3DTileFeature;
+    const name = building ? picked.getProperty('name') || 'Công trình OSM' : 'Điểm địa hình';
+    setLocationInfo(cartographic, name, building ? 'ready' : 'loading');
+    scene.requestRender();
+    if (!building) {
+      try {
+        const provider = await getTerrainProvider();
+        if (request !== identifySequence || !is3DEnabled()) return;
+        const [sample] = await sampleHeights(provider, [Cesium.Cartographic.clone(cartographic)]);
+        if (request !== identifySequence || !is3DEnabled()) return;
+        marker.position = Cesium.Cartographic.toCartesian(sample);
+        setLocationInfo(sample, name);
+        scene.requestRender();
+      } catch {
+        if (request === identifySequence && is3DEnabled()) setLocationInfo(cartographic, name, 'error');
+      }
+    }
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-  identifyButton?.classList.add('active');
-  showInfo('Chế độ tra cứu đang bật: click lên bản đồ 3D để xem tọa độ và cao độ.');
+  pressed(buttons.identify, true);
+  scene.canvas.style.cursor = 'crosshair';
+  setHeaderInfo('Tra cứu 3D · Click một vị trí để ghim tọa độ và cao độ.');
 }
 
-function stopIdentify() {
-  if (identifyHandler && !identifyHandler.isDestroyed()) identifyHandler.destroy();
-  identifyHandler = null;
-  identifyButton?.classList.remove('active');
-}
+//#endregion
 
-async function toggleOsmBuildings() {
-  if (!ol3d?.getEnabled() || isLoadingBuildings) return;
-  const scene = ol3d.getCesiumScene();
+//#region 5.6. Tải và trình bày công trình OSM
+async function setBuildings(enabled) {
+  if (!is3DEnabled()) return;
+  buildingsWanted = enabled;
+  updateBuildingsButton();
   if (osmBuildings) {
-    osmBuildings.show = !osmBuildings.show;
-    buildingsButton?.classList.toggle('active', osmBuildings.show);
-    if (osmBuildings.show) flyToBuildingsView();
+    osmBuildings.show = enabled;
+    ol3d.getCesiumScene().requestRender();
     return;
   }
+  if (!enabled || buildingsLoading) return;
+  buildingsLoading = true;
+  buttons.buildings.setAttribute('aria-busy', 'true');
   try {
-    isLoadingBuildings = true;
-    buildingsButton.disabled = true;
-    buildingsButton.textContent = '…';
-    showInfo('Đang tải công trình OSM 3D...');
-    osmBuildings = await Cesium.createOsmBuildingsAsync();
-    // Không gán Cesium3DTileStyle: giữ nguyên màu/texture mặc định của OSM Buildings.
-    osmBuildings.maximumScreenSpaceError = 4;
-    osmBuildings.tileFailed.addEventListener(function (event) {
-      console.error('Không tải được tile công trình OSM 3D', event);
-      showInfo('Một số tile công trình OSM 3D không tải được. Hãy kiểm tra Cesium ion token và kết nối mạng.');
+    const tileset = await Cesium.createOsmBuildingsAsync();
+    tileset.maximumScreenSpaceError = 8;
+    tileset.shadows = Cesium.ShadowMode.DISABLED;
+    tileset.tileFailed.addEventListener(() => {
+      if (buildingsWanted && is3DEnabled() && Date.now() - lastTileError > 15000) {
+        lastTileError = Date.now();
+        showInfo('Một số công trình chưa tải được. Kiểm tra kết nối và quyền truy cập Cesium ion.');
+      }
     });
-    scene.primitives.add(osmBuildings);
-    buildingsButton.classList.add('active');
-    flyToBuildingsView();
-    showInfo('Đã bật công trình OSM 3D.');
-  } catch (error) {
-    console.error('Không thể tải công trình OSM 3D', error);
-    showInfo('Không thể tải công trình OSM 3D. Hãy kiểm tra Cesium ion token và kết nối mạng.');
+    osmBuildings = tileset;
+    ol3d.getCesiumScene().primitives.add(tileset);
+    tileset.show = buildingsWanted;
+    styleBuildings();
+    ol3d.getCesiumScene().requestRender();
+  } catch {
+    if (buildingsWanted && is3DEnabled()) showInfo('Không tải được công trình. Kiểm tra kết nối và quyền Cesium ion, sau đó bật lại để thử.');
+    buildingsWanted = false;
+    updateBuildingsButton();
   } finally {
-    isLoadingBuildings = false;
-    buildingsButton.disabled = false;
-    buildingsButton.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 21V5h11v16M15 21V2h5v19M8 9h3M8 13h3M8 17h3M17 6h1M17 10h1M17 14h1"/></svg>';
+    buildingsLoading = false;
+    buttons.buildings.removeAttribute('aria-busy');
   }
 }
 
-function toggleWaterEffect() {
-  if (!ol3d?.getEnabled()) return;
-  waterEnabled = !waterEnabled;
-  setTerrainOptions();
-  waterButton?.classList.toggle('active', waterEnabled);
-  showInfo(waterEnabled ? 'Đã bật hiệu ứng nước và địa hình.' : 'Đã tắt hiệu ứng nước; địa hình vẫn được hiển thị.');
+function updateBuildingsButton() {
+  pressed(buttons.buildings, buildingsWanted);
+  buttons.buildings.title = buildingsWanted ? 'Ẩn công trình OSM 3D' : 'Bật công trình OSM 3D theo chiều cao';
+  buttons.buildings.setAttribute('aria-label', buttons.buildings.title);
 }
 
-/* =========================================================
-   CHUYỂN ĐỔI 2D / 3D
-========================================================= */
+function styleBuildings() {
+  if (!osmBuildings) return;
+  osmBuildings.style = new Cesium.Cesium3DTileStyle({ color: { conditions: [
+    ["Number(${feature['cesium#estimatedHeight']}) >= 100", 'color("#f2ab7a")'],
+    ["Number(${feature['cesium#estimatedHeight']}) >= 30", 'color("#86d4ca")'],
+    ['true', 'color("#b9d0de")'],
+  ] } });
+}
 
-export function toggle3D() {
-  if (!ol3d) return; // Nếu chưa khởi tạo OL-Cesium thì không xử lý
-  const enabled = !ol3d.getEnabled(); // Lấy trạng thái ngược lại của chế độ hiện tại
-  ol3d.setEnabled(enabled); // Bật hoặc tắt chế độ 3D
-  if (!enabled) reset2DViewDirection();
-  setThreeDButtonsVisible(enabled);
-  if (toggleButton) {
-    toggleButton.textContent = enabled ? '2D' : '3D'; // Nếu đang 3D thì nút hiện 2D, ngược lại hiện 3D
-    toggleButton.title = enabled ? 'Chuyển sang chế độ 2D' : 'Chuyển sang chế độ 3D';
-    toggleButton.classList.toggle('active', enabled); // Thêm class active khi đang ở chế độ 3D
+//#endregion
+
+//#region 5.7. Hiệu ứng, camera và chuyển chế độ 2D/3D
+function setEffect(effect, enabled) {
+  const scene = ol3d.getCesiumScene();
+  if (effect === 'water') {
+    scene.globe.showWaterEffect = enabled;
+    if (enabled) showInfo('Hiệu ứng sóng áp dụng tại vùng có mặt nạ nước của địa hình, chủ yếu biển và đại dương.');
   }
-}
-
-/* =========================================================
-   BẬT 3D
-========================================================= */
-
-export function enable3D() {
-  if (!ol3d) return; // Nếu chưa có OL-Cesium thì không xử lý
-  ol3d.setEnabled(true); // Bật chế độ 3D
-  setThreeDButtonsVisible(true);
-  if (toggleButton) {
-    toggleButton.textContent = '2D'; // Đổi chữ nút để người dùng có thể quay lại 2D
-    toggleButton.title = 'Chuyển sang chế độ 2D';
-    toggleButton.classList.add('active');
+  if (effect === 'lighting') {
+    scene.globe.enableLighting = enabled;
+    scene.light = enabled ? new Cesium.DirectionalLight({ direction: Cesium.Cartesian3.negate(Cesium.Cartesian3.normalize(scene.camera.positionWC, new Cesium.Cartesian3()), new Cesium.Cartesian3()), intensity: 1.5 }) : new Cesium.SunLight();
   }
+  if (effect === 'fog') scene.fog.enabled = enabled;
+  if (effect === 'atmosphere') { if (scene.skyAtmosphere) scene.skyAtmosphere.show = enabled; scene.globe.showGroundAtmosphere = enabled; }
+  pressed(buttons.effects, [...effectsPanel.querySelectorAll('input')].some(input => input.checked));
+  scene.requestRender();
 }
 
-/* =========================================================
-   TẮT 3D
-========================================================= */
+function zoomCamera(direction) {
+  if (!is3DEnabled()) return;
+  const scene = ol3d.getCesiumScene();
+  const camera = scene.camera;
+  const ground = scene.globe.getHeight(camera.positionCartographic) || 0;
+  const amount = Math.max(5, (camera.positionCartographic.height - ground) * .35);
+  if (direction > 0) camera.zoomIn(amount); else camera.zoomOut(amount);
+  scene.requestRender();
+}
 
-export function disable3D() {
-  if (!ol3d) return; // Nếu chưa có OL-Cesium thì không xử lý
-  ol3d.setEnabled(false); // Tắt chế độ 3D, quay về OpenLayers 2D
-  reset2DViewDirection();
-  setThreeDButtonsVisible(false);
-  if (toggleButton) {
-    toggleButton.textContent = '3D'; // Đổi chữ nút để người dùng có thể bật lại 3D
-    toggleButton.title = 'Chuyển sang chế độ 3D';
-    toggleButton.classList.remove('active');
+function resetViewDirection() {
+  if (!is3DEnabled()) return;
+  const scene = ol3d.getCesiumScene();
+  const camera = scene.camera;
+  camera.cancelFlight();
+  // Không truyền destination: chỉ sửa hướng, giữ nguyên tọa độ và cao độ camera.
+  camera.setView({ orientation: { heading: 0, pitch: camera.pitch, roll: 0 } });
+  scene.requestRender();
+}
+
+function setEnabled(enabled) {
+  if (!ol3d || enabled === ol3d.getEnabled()) return;
+  stopAnalysis();
+  document.dispatchEvent(new CustomEvent('webgis-tool-activate', { detail: { name: 'cesium' } }));
+  ol3d.setEnabled(enabled);
+  document.querySelector('.map-wrapper').classList.toggle('is-3d', enabled);
+  Object.values(buttons).forEach(control => { control.hidden = !enabled; });
+  headerInfo.hidden = !enabled;
+  markerSource.show = enabled;
+  clearTimeout(messageTimer);
+  infoPanel.hidden = true;
+  if (enabled) {
+    setHeaderInfo('Chế độ 3D · Tra cứu vị trí, đo bám địa hình hoặc vẽ mặt cắt.');
+  } else {
+    map2D.getView().setRotation(0);
+    map2D.render();
   }
+  toggleButton.textContent = enabled ? '2D' : '3D';
+  toggleButton.title = enabled ? 'Chuyển sang chế độ 2D' : 'Chuyển sang chế độ 3D';
+  toggleButton.setAttribute('aria-label', toggleButton.title);
+  pressed(toggleButton, enabled);
 }
 
-/* =========================================================
-   KIỂM TRA TRẠNG THÁI 3D
-========================================================= */
-
-export function is3DEnabled() {
-  return ol3d ? ol3d.getEnabled() : false; // Trả về true nếu đang bật 3D, false nếu chưa bật hoặc chưa khởi tạo
-}
-
-/* =========================================================
-   LẤY CESIUM SCENE
-========================================================= */
-
-export function getCesiumScene() {
-  return ol3d ? ol3d.getCesiumScene() : null; // Trả về Cesium Scene để cấu hình hoặc thao tác 3D nâng cao
-}
-
-/* =========================================================
-   LẤY ĐỐI TƯỢNG OL-CESIUM
-========================================================= */
-
-export function getOLCesium() {
-  return ol3d; // Trả về đối tượng OL-Cesium hiện tại
-}
-
-function reset2DViewDirection() {
-  if (!map2D) return;
-  map2D.getView().setRotation(0);
-  map2D.render();
-}
+export function toggle3D() { if (ol3d) setEnabled(!ol3d.getEnabled()); }
+export function enable3D() { setEnabled(true); }
+export function disable3D() { setEnabled(false); }
+export function is3DEnabled() { return ol3d ? ol3d.getEnabled() : false; }
+export function getCesiumScene() { return ol3d?.getCesiumScene() || null; }
+export function getOLCesium() { return ol3d; }
+//#endregion
+//#endregion

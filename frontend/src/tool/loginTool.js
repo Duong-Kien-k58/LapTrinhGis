@@ -6,8 +6,6 @@ const icons = {
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="login-eye-slash" d="m3 3 18 18"/>',
 };
 const svg = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
-const google = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.5-.2-2.2H12v4.2h5.4a4.6 4.6 0 0 1-2 3v2.5h3.3c1.9-1.7 2.9-4.3 2.9-7.5Z"/><path fill="#34A853" d="M12 22c2.7 0 4.9-.9 6.6-2.4l-3.2-2.5a6 6 0 0 1-3.4 1c-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.4 14a6 6 0 0 1 0-4V7.4H3.1a10 10 0 0 0 0 9.2L6.4 14Z"/><path fill="#EA4335" d="M12 5.9c1.5 0 2.8.5 3.9 1.5l2.9-2.9A9.5 9.5 0 0 0 12 2a10 10 0 0 0-8.9 5.4L6.4 10A6 6 0 0 1 12 5.9Z"/></svg>';
-const microsoft = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#f25022" d="M2 2h9v9H2z"/><path fill="#7fba00" d="M13 2h9v9h-9z"/><path fill="#00a4ef" d="M2 13h9v9H2z"/><path fill="#ffb900" d="M13 13h9v9h-9z"/></svg>';
 
 function field(id, label, placeholder, type = 'text', autocomplete = '') {
   const password = type === 'password';
@@ -29,12 +27,10 @@ export function initLoginUI() {
     mode = nextMode;
     const registering = mode === 'register';
     const recovering = mode === 'reset';
-    const title = recovering ? 'Quên mật khẩu?' : registering ? 'Tạo tài khoản mới' : 'Chào mừng trở lại';
-    const description = recovering ? 'Nhập email đã đăng ký để yêu cầu khôi phục tài khoản.' : registering ? 'Bắt đầu không gian làm việc với dữ liệu của bạn.' : 'Đăng nhập để tiếp tục không gian làm việc của bạn.';
+    const title = recovering ? 'Quên mật khẩu?' : registering ? 'Tạo tài khoản mới' : 'Đăng nhập';
+    const description = recovering ? 'Nhập email đã đăng ký để yêu cầu khôi phục tài khoản.' : registering ? 'Bắt đầu không gian làm việc với dữ liệu của bạn.' : 'Truy cập không gian bản đồ của bạn.';
     content.innerHTML = `
-      ${recovering ? '<button class="auth-back" type="button" data-auth-mode="login">← Quay lại đăng nhập</button>' : `<nav class="auth-tabs" aria-label="Tùy chọn tài khoản"><button type="button" data-auth-mode="login" ${!registering ? 'aria-current="page"' : ''}>Đăng nhập</button><button type="button" data-auth-mode="register" ${registering ? 'aria-current="page"' : ''}>Đăng ký</button></nav>`}
       <div class="auth-heading"><h1 id="login-title">${title}</h1><p id="login-description">${description}</p></div>
-      ${recovering ? '<div class="auth-recovery-icon" aria-hidden="true">' + svg('mail') + '</div>' : `<div class="auth-providers"><button type="button" data-auth-provider="Google">${google}<span>Google</span></button><button type="button" data-auth-provider="Microsoft">${microsoft}<span>Microsoft</span></button></div><div class="auth-divider"><span>hoặc ${registering ? 'đăng ký' : 'đăng nhập'} bằng tài khoản</span></div>`}
       <form id="login-form" novalidate>
         ${registering ? field('register-name', 'Họ và tên', 'Nguyễn Văn An', 'text', 'name') : ''}
         ${field('login-username', recovering || registering ? 'Địa chỉ email' : 'Email hoặc tên đăng nhập', recovering || registering ? 'ban@example.com' : 'Nhập email hoặc tên đăng nhập', recovering || registering ? 'email' : 'text', recovering || registering ? 'email' : 'username')}
@@ -46,7 +42,7 @@ export function initLoginUI() {
         <button class="login-submit" type="submit">${recovering ? 'Yêu cầu đặt lại mật khẩu' : registering ? 'Tạo tài khoản' : 'Đăng nhập'}<span aria-hidden="true">→</span></button>
       </form>
       <p class="auth-switch">${recovering ? 'Nhớ mật khẩu rồi?' : registering ? 'Đã có tài khoản?' : 'Chưa có tài khoản?'} <button type="button" data-auth-mode="${registering || recovering ? 'login' : 'register'}">${registering || recovering ? 'Đăng nhập' : 'Đăng ký ngay'}</button></p>
-      <button class="auth-map-return" type="button" data-auth-return>← Tiếp tục xem bản đồ</button>`;
+      `;
     if (mode === 'login') {
       try {
         const saved = localStorage.getItem(rememberKey);
@@ -78,15 +74,18 @@ export function initLoginUI() {
         first?.focus();
       }
     }
-    if (event.target.matches('[data-password]')) content.querySelector('#login-caps').hidden = !event.getModifierState('CapsLock');
+    if (event.target.matches('[data-password]') && typeof event.getModifierState === 'function') {
+      content.querySelector('#login-caps').hidden = !event.getModifierState('CapsLock');
+    }
   });
   dialog.addEventListener('keyup', event => {
-    if (event.target.matches('[data-password]')) content.querySelector('#login-caps').hidden = !event.getModifierState('CapsLock');
+    if (event.target.matches('[data-password]') && typeof event.getModifierState === 'function') {
+      content.querySelector('#login-caps').hidden = !event.getModifierState('CapsLock');
+    }
   });
   dialog.addEventListener('click', event => {
     const button = event.target.closest('button');
     if (button?.dataset.authMode) render(button.dataset.authMode);
-    if (button?.hasAttribute('data-auth-return')) dialog.close();
     if (button?.dataset.passwordFor) {
       const input = content.querySelector(`#${button.dataset.passwordFor}`);
       const visible = input.type === 'password';
@@ -95,7 +94,6 @@ export function initLoginUI() {
       const label = content.querySelector(`label[for="${input.id}"]`).textContent.toLowerCase();
       button.setAttribute('aria-label', `${visible ? 'Ẩn' : 'Hiện'} ${label}`);
     }
-    if (button?.dataset.authProvider) showFeedback(`Đăng nhập bằng ${button.dataset.authProvider} chưa được kích hoạt. Bạn có thể tiếp tục xem bản đồ.`);
     if (button?.dataset.authInfo) {
       const messages = {
         terms: 'Điều khoản sử dụng sẽ được quản trị viên cung cấp khi mở đăng ký tài khoản.',

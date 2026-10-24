@@ -1,5 +1,15 @@
 # WebGIS
 
+Ứng dụng bản đồ WebGIS dùng OpenLayers/Cesium, Django, PostGIS và GeoServer.
+Hướng dẫn bên dưới dành cho cài đặt và chạy phát triển trên Windows bằng PowerShell.
+
+## Bắt đầu
+
+1. Cài các phần mềm trong [Yêu cầu trước khi cài](#yêu-cầu-trước-khi-cài).
+2. [Tải mã nguồn và chuẩn bị dữ liệu](#cài-đặt).
+3. Tạo `.env` từ `.env.example`, cấu hình database và tài khoản GeoServer.
+4. Chạy Django và Vite ở hai terminal riêng; mở `http://localhost:5173`.
+
 ## Chức năng đối chiếu PTN
 
 Đã nối trình bày vector/raster bằng SLD (gồm chuyên đề), overview theo lớp,
@@ -38,6 +48,16 @@ Cài các phần mềm sau trên máy mới:
 - Python 3.12 trở lên
 - PostgreSQL kèm tiện ích PostGIS
 - GeoServer (mặc định chạy ở cổng `8080`)
+- Java tương thích với phiên bản GeoServer đã cài nếu chạy GeoServer độc lập.
+
+Kiểm tra các công cụ đã có trong PATH:
+
+```powershell
+git --version
+node --version
+npm --version
+python --version
+```
 
 > Dữ liệu GIS và cơ sở dữ liệu không được lưu trong repository. Muốn bản đồ
 > hiển thị đầy đủ, hãy xin file dữ liệu hoặc bản sao lưu database từ người quản
@@ -97,8 +117,14 @@ python manage.py runserver
 
 API sẽ chạy tại `http://localhost:8000`.
 
-Trước khi chạy trên máy mới, sao chép `.env.example` thành `.env` ở thư mục gốc
-LapTrinhGis, điền `DJANGO_SECRET_KEY` và các biến `POSTGRES_*` cho đúng máy của bạn.
+Nếu PowerShell chặn `Activate.ps1`, có thể chạy trực tiếp Python trong môi trường
+ảo, không cần kích hoạt (vẫn ở thư mục `backend`):
+
+```powershell
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+.\venv\Scripts\python.exe manage.py migrate
+.\venv\Scripts\python.exe manage.py runserver
+```
 
 ### 4. Chạy frontend
 
@@ -112,6 +138,19 @@ npm run dev
 
 Vite sẽ in địa chỉ để mở ứng dụng, thông thường là
 `http://localhost:5173`.
+
+### 5. Kiểm tra sau khi cài
+
+1. Giữ PostgreSQL, GeoServer, Django và Vite cùng chạy.
+2. Mở ứng dụng, bật một lớp đã publish trong mục lục và kiểm tra bản đồ có dữ liệu.
+3. Mở **Xem dữ liệu**, chọn lớp vector để kiểm tra bảng thuộc tính và API.
+4. Nếu dùng địa hình 3D, điền token Cesium ion vào `VITE_CESIUM_ION_TOKEN`
+   trong `.env`, khởi động lại Vite rồi chuyển sang **3D**. Các dịch vụ bản đồ
+   nền và Cesium cần kết nối Internet.
+
+`migrate` chỉ tạo các bảng do Django quản lý; lệnh này không tự nhập dữ liệu GIS
+hoặc publish layer trên GeoServer. Giao diện đăng nhập hiện chỉ là bản demo,
+không cần tạo tài khoản để mở bản đồ.
 
 ## Cấu hình địa chỉ dịch vụ
 
@@ -242,6 +281,70 @@ Mở terminal thứ hai tại thư mục gốc và chạy backend:
    theo hướng dẫn phía trên. Dùng **Esc** để hủy thao tác biên tập đang thực hiện.
 7. Dùng **Tìm công cụ** để tìm chức năng và **Hỗ trợ sử dụng** để xem trạng thái dịch vụ.
 
+## Công cụ địa hình 3D
+
+Chuyển sang **3D** để dùng bộ công cụ Cesium. Các icon chỉ thao tác trên
+OpenLayers 2D được ẩn; nút đưa hướng nhìn về Bắc nằm ngay dưới nút **2D**,
+giữ nguyên vị trí, độ zoom và độ nghiêng hiện tại.
+
+- **Tra cứu vị trí:** bật icon tâm ngắm rồi click địa hình hoặc công trình.
+  Một pin duy nhất di chuyển theo điểm click; tọa độ và cao độ nằm trên header.
+- **Đo 3D:** chọn khoảng cách hoặc diện tích bề mặt, click các đỉnh rồi bấm
+  **Tính kết quả**, Enter hoặc chuột phải. Khoảng cách chỉ hiển thị chiều dài
+  bám địa hình và chiều dài ngang; diện tích hiển thị diện tích bề mặt.
+  Backspace bỏ đỉnh cuối, Escape đóng công cụ; **Đo lại** bắt đầu phép đo mới.
+- **Mặt cắt:** vẽ tuyến gồm ít nhất hai điểm rồi bấm **Tạo mặt cắt**. Giao diện
+  riêng cho biểu đồ cao độ theo khoảng cách ngang, khoảng cao độ và tổng lên/xuống.
+  Rê chuột hoặc kéo thanh trượt để xem cao độ, độ dốc từng đoạn lấy mẫu và vị trí
+  tương ứng trên bản đồ. **Vẽ tuyến mới** bắt đầu mặt cắt khác.
+- **Công trình OSM:** bấm icon công trình để bật/tắt trực tiếp. Icon sáng khi bật;
+  mô hình luôn tô màu theo chiều cao. Mô hình phụ thuộc mức phủ dữ liệu OSM và quyền Cesium ion.
+- **Hiệu ứng:** bật/tắt sóng nước, chiếu sáng địa hình, sương và khí quyển.
+  Sóng nước chỉ xuất hiện tại vùng có water mask trong bộ địa hình.
+
+Đo và mặt cắt lấy mẫu từ **Cesium World Terrain**, không suy ra cao độ từ ảnh
+WMS/DEM đang phủ trên bản đồ. Cao độ tham chiếu ellipsoid WGS84; kết quả
+xấp xỉ theo độ phân giải dữ liệu. Tuyến tối đa 64 đỉnh và khoảng 4.096 mẫu;
+vùng đo bán kính dưới 100 km, tối đa 16.000 điểm lưới. Khi thiếu dữ liệu,
+công cụ báo lỗi thay vì gán cao độ 0. Đóng công cụ hoặc chuyển về 2D sẽ hủy
+kết quả đang chờ tải.
+
+Kiểm thử tính toán địa hình, đồng bộ lớp và tải WMS: `npm test`
+tại thư mục `frontend`. Các test nằm trong `frontend/tests/unit/`.
+
+## Tổ chức mã nguồn frontend
+
+Toàn bộ CSS tự viết nằm trong `frontend/src/styles/` và được import tập trung
+ở đầu `main.js`, sau CSS của thư viện:
+
+- `main.css`: giao diện bản đồ chính, workspace, bảng/panel, trình bày lớp và
+  công cụ Cesium. Các vùng được đánh dấu `/* #region ... */` để thu gọn trong editor.
+- `login.css`: giao diện đăng nhập, đăng ký và khôi phục tài khoản.
+
+Các vùng CSS giữ thứ tự ghi đè của giao diện hiện có. Khi chỉnh một thành phần,
+tìm vùng và selector tương ứng để sửa; tránh tạo thêm file CSS hoặc nối một khối
+ghi đè ở cuối file cho cùng chức năng. Đường dẫn tài nguyên trong `public/` dùng
+đường dẫn từ gốc, ví dụ `/assets/...`.
+
+JavaScript trong `frontend/src/tool/` được chia theo chức năng:
+
+| File | Phạm vi quản lý |
+| --- | --- |
+| `cesiumTool.js` | Toàn bộ 3D: đồng bộ lớp, tải WMS, tính toán địa hình, đo/mặt cắt, tra cứu, công trình, hiệu ứng và camera |
+| `basicTools.js` | Tọa độ, tỷ lệ, bản đồ tổng quan và định vị GPS |
+| `workspaceTools.js` | Tìm công cụ, thống kê workspace, hỗ trợ sử dụng và trạng thái dịch vụ |
+| `rasterManager.js` | Loại trình bày, tạo lớp, xem trước và quản trị raster |
+| `loginTool.js` | Hành vi đăng nhập, đăng ký và khôi phục tài khoản |
+| `toolManager.js` | Khởi tạo, bật/tắt và điều phối công cụ bản đồ 2D |
+| `apiClient.js`, `toolUtils.js` | Gọi API và các tiện ích dùng chung |
+
+Các module lớn có nhiệm vụ riêng như CRUD, tìm thuộc tính, popup, đo 2D, chọn
+vùng, in PDF, mục lục, trình bày lớp và overview theo lớp vẫn có file riêng.
+`main.js` kết nối bản đồ với các module; `config/layers.js` chứa cấu hình dữ liệu.
+Các file vừa hợp nhất dùng `//#region` / `//#endregion` phân chia nhóm chức năng;
+`cesiumTool.js` có vùng con cho từng nhóm điều khiển 3D. Thêm chức năng cùng nhóm
+vào vùng tương ứng, thay vì tạo module nhỏ chỉ để chuyển tiếp lời gọi.
+
 ## Kiểm tra mã nguồn
 
 Tại thư mục gốc:
@@ -250,6 +353,7 @@ Tại thư mục gốc:
 .\backend\venv\Scripts\python.exe backend/manage.py check
 .\backend\venv\Scripts\python.exe backend/manage.py makemigrations --check --dry-run
 cd frontend
+npm test
 npm run build
 ```
 

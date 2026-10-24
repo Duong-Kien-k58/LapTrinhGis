@@ -6,19 +6,6 @@ import VectorSource from 'ol/source/Vector.js'
 import { Circle as CircleStyle, Fill, Stroke, Style } from 'ol/style.js'
 import { createToolPanel } from './toolUtils.js'
 
-const PLACES = {
-  'hà nội': [105.8342, 21.0278],
-  'đà nẵng': [108.2022, 16.0544],
-  'thành phố hồ chí minh': [106.6297, 10.8231],
-}
-
-function parsePair(value) {
-  const parts = value.split(',').map(item => item.trim())
-  if (parts.some(item => !item)) return null
-  const values = parts.map(Number)
-  return values.length === 2 && values.every(Number.isFinite) ? values : null
-}
-
 function getProjectionZoneWidth() {
   return Number(document.querySelector('input[name="projection-zone"]:checked')?.value || 6)
 }
@@ -82,25 +69,26 @@ export function createPositionSearchTool(map) {
     id: 'position-search-panel',
     title: 'Tìm kiếm vị trí',
     content: `
-      <form>
+      <form novalidate>
         <div class="coordinate-mode-tabs" role="group" aria-label="Hệ tọa độ tìm kiếm">
           <button type="button" data-coordinate-mode="wgs84" class="active">WGS84</button>
           <button type="button" data-coordinate-mode="vn2000">VN2000</button>
         </div>
-        <label data-search-label>Địa danh hoặc tọa độ WGS84</label>
-        <input data-search-input placeholder="Ví dụ: Hà Nội hoặc 21.02, 105.83">
+        <div class="coordinate-fields">
+          <label for="position-coordinate-first"><span data-coordinate-label="first">Vĩ độ <small>°</small></span><input id="position-coordinate-first" name="first" type="number" inputmode="decimal" step="any" min="-90" max="90" required placeholder="21.0278" aria-describedby="position-search-hint"></label>
+          <label for="position-coordinate-second"><span data-coordinate-label="second">Kinh độ <small>°</small></span><input id="position-coordinate-second" name="second" type="number" inputmode="decimal" step="any" min="-180" max="180" required placeholder="105.8342" aria-describedby="position-search-hint"></label>
+        </div>
         <button type="submit">Tìm kiếm vị trí</button>
-        <p class="tool-hint" data-search-hint>Nhập địa danh hoặc vĩ độ, kinh độ theo thứ tự Lat, Long.</p>
+        <p id="position-search-hint" class="tool-hint" data-search-hint>Nhập vĩ độ và kinh độ theo đơn vị độ thập phân.</p>
       </form>
     `,
   })
   const form = panel.querySelector('form')
-  const input = panel.querySelector('[data-search-input]')
-  const label = panel.querySelector('[data-search-label]')
+  const inputs = [...panel.querySelectorAll('.coordinate-fields input')]
+  const labels = [...panel.querySelectorAll('[data-coordinate-label]')]
+  const input = inputs[0]
   const hint = panel.querySelector('[data-search-hint]')
   const modeButtons = panel.querySelectorAll('[data-coordinate-mode]')
-  input.id = 'position-search-query'
-  label.htmlFor = input.id
   hint.setAttribute('role', 'status')
   modeButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.coordinateMode === 'wgs84')))
   let mode = 'wgs84'
@@ -109,27 +97,29 @@ export function createPositionSearchTool(map) {
     mode = nextMode
     const isWgs84 = mode === 'wgs84'
     modeButtons.forEach(button => { const selected = button.dataset.coordinateMode === mode; button.classList.toggle('active', selected); button.setAttribute('aria-pressed', String(selected)) })
-    label.textContent = isWgs84 ? 'Địa danh hoặc tọa độ WGS84' : 'Tọa độ phẳng VN2000'
-    input.value = ''
-    input.placeholder = isWgs84 ? 'Ví dụ: Hà Nội hoặc 21.02, 105.83' : 'Ví dụ: 2329089.18, 524092.03'
+    labels[0].innerHTML = isWgs84 ? 'Vĩ độ <small>°</small>' : 'X · Bắc <small>m</small>'
+    labels[1].innerHTML = isWgs84 ? 'Kinh độ <small>°</small>' : 'Y · Đông <small>m</small>'
+    inputs.forEach((field, index) => {
+      field.value = ''
+      field.removeAttribute('aria-invalid')
+      field.min = isWgs84 ? String(index === 0 ? -90 : -180) : '0'
+      if (isWgs84) field.max = String(index === 0 ? 90 : 180)
+      else field.removeAttribute('max')
+      field.placeholder = isWgs84 ? ['21.0278', '105.8342'][index] : ['2329089.18', '524092.03'][index]
+    })
+    hint.dataset.state = ''
     hint.textContent = isWgs84
-      ? 'Nhập địa danh hoặc vĩ độ, kinh độ theo thứ tự Lat, Long.'
-      : `Nhập X, Y (Bắc, Đông) theo múi ${getProjectionZoneWidth()}°; kinh tuyến trục được chọn theo tâm bản đồ.`
+      ? 'Nhập vĩ độ và kinh độ theo đơn vị độ thập phân.'
+      : vn2000Hint()
     input.focus()
   }
 
-  function readWgs84(value) {
-    const knownPlace = PLACES[value.toLocaleLowerCase('vi-VN')]
-    if (knownPlace) return knownPlace
-    const pair = parsePair(value)
-    if (!pair) return null
+  function readWgs84(pair) {
     const [latitude, longitude] = pair
     return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 ? [longitude, latitude] : null
   }
 
-  function readVn2000(value) {
-    const pair = parsePair(value)
-    if (!pair) return null
+  function readVn2000(pair) {
     const [northing, easting] = pair
     if (northing < 0 || easting < 0) return null
     const zoneWidth = getProjectionZoneWidth()
@@ -142,11 +132,21 @@ export function createPositionSearchTool(map) {
 
   form.addEventListener('submit', (event) => {
     event.preventDefault()
-    const coordinates = mode === 'wgs84' ? readWgs84(input.value.trim()) : readVn2000(input.value.trim())
+    const invalid = inputs.find(field => !field.validity.valid || !Number.isFinite(field.valueAsNumber))
+    inputs.forEach(field => field.setAttribute('aria-invalid', String(!field.validity.valid || !Number.isFinite(field.valueAsNumber))))
+    if (invalid) {
+      hint.dataset.state = 'error'
+      hint.textContent = !invalid.value ? 'Vui lòng nhập đủ hai giá trị tọa độ.' : mode === 'wgs84' ? 'Vĩ độ từ −90 đến 90°, kinh độ từ −180 đến 180°.' : 'X và Y phải là số không âm, đơn vị mét.'
+      invalid.focus()
+      return
+    }
+    const pair = inputs.map(field => field.valueAsNumber)
+    const coordinates = mode === 'wgs84' ? readWgs84(pair) : readVn2000(pair)
     if (!coordinates) {
+      hint.dataset.state = 'error'
       hint.textContent = mode === 'wgs84'
-        ? 'Không tìm thấy vị trí. Nhập Lat, Long hợp lệ hoặc một địa danh được hỗ trợ.'
-        : 'Tọa độ VN2000 không hợp lệ. Nhập theo định dạng X, Y.'
+        ? 'Vĩ độ hoặc kinh độ không hợp lệ.'
+        : 'Tọa độ VN2000 không hợp lệ. Kiểm tra lại X và Y.'
       return
     }
 
@@ -154,13 +154,20 @@ export function createPositionSearchTool(map) {
     temporaryPointSource.clear()
     temporaryPointSource.addFeature(new Feature(new Point(mapCoordinate)))
     map.getView().animate({ center: mapCoordinate, zoom: 13, duration: 500 })
+    hint.dataset.state = 'success'
     hint.textContent = `Đã đến: ${coordinates[1].toFixed(6)}, ${coordinates[0].toFixed(6)} (WGS84).`
   })
+  inputs.forEach(field => field.addEventListener('input', () => {
+    field.removeAttribute('aria-invalid')
+    hint.dataset.state = ''
+    hint.textContent = mode === 'wgs84' ? 'Nhập vĩ độ và kinh độ theo đơn vị độ thập phân.' : vn2000Hint()
+  }))
+  const vn2000Hint = () => `Múi ${getProjectionZoneWidth()}° · Kinh tuyến trục theo tâm bản đồ.`
   modeButtons.forEach((button) => button.addEventListener('click', () => updateMode(button.dataset.coordinateMode)))
 
   const clear = () => temporaryPointSource.clear()
   panel.addEventListener('toolpanelclose', clear)
-  document.querySelectorAll('input[name="projection-zone"]').forEach(radio => radio.addEventListener('change', () => { if (mode === 'vn2000') hint.textContent = `Nhập X, Y (Bắc, Đông) theo múi ${getProjectionZoneWidth()}°; kinh tuyến trục được chọn theo tâm bản đồ.` }))
+  document.querySelectorAll('input[name="projection-zone"]').forEach(radio => radio.addEventListener('change', () => { if (mode === 'vn2000') hint.textContent = vn2000Hint() }))
   return {
     open() {
       document.dispatchEvent(new CustomEvent('webgis-tool-activate', { detail: { name: 'position' } }))

@@ -1,13 +1,12 @@
 //#region 1. IMPORT
 import 'ol/ol.css';
-import './style.css';
-import './workspace.css';
-import './ptn-workspace.css';
-import './login.css';
+import 'tabulator-tables/dist/css/tabulator.min.css';
+import 'cesium/Build/Cesium/Widgets/widgets.css';
+import './styles/main.css';
+import './styles/login.css';
 import { initLoginUI } from './tool/loginTool.js';
 import { createPositionSearchTool } from './tool/positionSearchTool.js';
-import { initWorkspaceTools } from './tool/workspaceTools.js';
-import { createSystemTools } from './tool/systemTools.js';
+import { initWorkspaceTools, createSystemTools } from './tool/workspaceTools.js';
 
 import Map from 'ol/Map.js';
 import View from 'ol/View.js';
@@ -411,7 +410,7 @@ document.querySelectorAll('[data-layer-service]').forEach(function (item) {
 
 //#endregion
 
-//#region 5. TRÌNH QUẢN LÝ TÌM KIẾM, CRUD VÀ CLICK BẢN ĐỒ
+//#region 4. TRÌNH QUẢN LÝ TÌM KIẾM, CRUD VÀ CLICK BẢN ĐỒ
 
 const searchManager = createSearchManager({
   map,
@@ -549,7 +548,7 @@ map.on('singleclick', function (event) {
 
 //#endregion
 
-//#region 6. CẤU HÌNH HIỂN THỊ
+//#region 5. CẤU HÌNH HIỂN THỊ
 //Lưu cấu hình --> Sau khi trình duyệt mở lại sẽ đọc cấu hình này để áp dụng
 const DISPLAY_CONFIG_STORAGE_KEY = 'webgis_display_config_v1'; 
 // ================== LƯU / ĐỌC CẤU HÌNH ==================
@@ -1094,7 +1093,7 @@ window.addEventListener('webgis-data-saved', event => {
 const primaryControls = document.getElementById('primary-map-controls');
 primaryControls.append(document.querySelector('.layer-catalog-button'));
 map.getControls().forEach(control => {
-  if (control.element.matches('.ol-zoom, .ol-full-screen, .ol-zoom-extent, .ol-locate, .popup-info-control, .ol-rotate')) {
+  if (control.element.matches('.ol-zoom, .ol-locate, .popup-info-control, .ol-rotate')) {
     primaryControls.append(control.element);
   }
 });

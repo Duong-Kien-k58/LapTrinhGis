@@ -1,10 +1,18 @@
-import ZoomToExtent from 'ol/control/ZoomToExtent.js';
+//#region Imports
 import ScaleLine from 'ol/control/ScaleLine.js';
 import OverviewMap from 'ol/control/OverviewMap.js';
-import FullScreen from 'ol/control/FullScreen.js';
 import TileLayer from 'ol/layer/Tile.js';
-import { fromLonLat, toLonLat, getPointResolution } from 'ol/proj.js';
+import { toLonLat, fromLonLat, getPointResolution } from 'ol/proj.js';
+import Feature from 'ol/Feature.js';
+import Point from 'ol/geom/Point.js';
+import VectorLayer from 'ol/layer/Vector.js';
+import VectorSource from 'ol/source/Vector.js';
+import Geolocation from 'ol/Geolocation.js';
+import Control from 'ol/control/Control.js';
+import { Style, Fill, Stroke, Circle as CircleStyle } from 'ol/style.js';
+//#endregion
 
+//#region 1. Tọa độ, tỷ lệ và bản đồ tổng quan
 function toVn2000(longitude, latitude, zoneWidth) {
   const a = 6378137 // Bán trục lớn ellipsoid
   const e2 = 0.00669438 // Độ lệch tâm bình phương
@@ -28,24 +36,7 @@ function toVn2000(longitude, latitude, zoneWidth) {
   return { northing, easting }
 }
 
-function createControlIcon(content) {
-  const icon = document.createElement('span');
-  icon.className = 'map-control-icon-wrap';
-  icon.innerHTML = `<svg class="map-control-icon" viewBox="0 0 24 24">${content}</svg>`;
-  return icon;
-}
-
 export function createBasicTools(map) {
-  // Phóng đến phạm vi Hà Nội
-  const bottomLeft = fromLonLat([105.2, 20.5]);
-  const topRight = fromLonLat([106.5, 21.6]);
-  const zoomToExtentControl = new ZoomToExtent({
-    extent: [bottomLeft[0], bottomLeft[1], topRight[0], topRight[1]],
-    label: createControlIcon(`<path d="M8 4H4v4M16 4h4v4M4 16v4h4M20 16v4h-4"/><rect x="9" y="9" width="6" height="6" rx="1"/>`),
-    tipLabel: 'Xem toàn bộ khu vực'
-  });
-  map.addControl(zoomToExtentControl);
-
   // Thước tỷ lệ
   const scaleLineControl = new ScaleLine({
     target: document.getElementById('header-scale-ruler'),
@@ -90,6 +81,10 @@ export function createBasicTools(map) {
     if (!event.dragging) updateCoordinates(event.coordinate);
   });
   map.on('singleclick', event => updateCoordinates(event.coordinate));
+  document.addEventListener('webgis-coordinate-update', event => {
+    const { longitude, latitude } = event.detail;
+    updateCoordinates(fromLonLat([longitude, latitude], view.getProjection()));
+  });
   projectionInputs.forEach(input => input.addEventListener('change', () => updateCoordinates(latestCoordinate)));
   view.on('change:resolution', updateScale);
   view.on('change:center', updateScale);
@@ -102,15 +97,6 @@ export function createBasicTools(map) {
     layers: [createOverviewBaseLayer(map)]
   });
   map.addControl(overviewMapControl);
-
-  // Toàn màn hình
-  const fullScreenControl = new FullScreen({
-    source: document.querySelector('.map-wrapper'),
-    label: createControlIcon(`<path d="M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5"/>`),
-    labelActive: createControlIcon(`<path d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5"/>`),
-    tipLabel: 'Toàn màn hình'
-  });
-  map.addControl(fullScreenControl);
 
   return { 
   scaleLineControl, // Trả control thước tỷ lệ để file khác có thể quản lý/ẩn hiện
@@ -129,3 +115,138 @@ export function createOverviewBaseLayer(map) {
   sync();
   return layer;
 }
+//#endregion
+
+//#region 2. Định vị vị trí hiện tại
+//Hàm tạo công  cụ định vị
+export function createGeolocationTool(map, beforeStart = function () {}) {
+  let active = false;
+  let hasZoomed = false;
+
+  //Khởi tạo đối tượng định vị
+  const geolocation = new Geolocation({
+    trackingOptions: {
+      enableHighAccuracy: true
+    },
+    projection: map.getView().getProjection()
+  });
+
+  //Tạo đối tượng hiển thị vị trí
+  const positionFeature = new Feature();
+  positionFeature.setStyle(new Style({
+      image: new CircleStyle({
+        radius: 8,
+        fill: new Fill({
+          color: '#cc0f2b'
+        }),
+        stroke: new Stroke({
+          color: '#ffffff',
+          width: 3
+        })
+      })
+    })
+  );
+
+  //Tạo lớp chứa vị trí
+  const positionLayer = new VectorLayer({
+    visible: false,
+    source: new VectorSource({
+      features: [positionFeature]
+    }),
+    zIndex: 9999
+  });
+  map.addLayer(positionLayer);
+
+  //Tạo nút định vị
+  const button = document.createElement('button');
+  button.className = 'ol-locate-btn';
+  button.title = 'Định vị vị trí hiện tại';
+  button.innerHTML = `<svg class="map-control-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><circle class="icon-fill" cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>`;
+  //Tạo control định vị
+  const element = document.createElement('div');
+  element.className = 'ol-locate ol-control';
+  element.appendChild(button);
+  const control = new Control({
+    element
+  });
+  map.addControl(control);
+
+  //Cập nhật trạng thái nút
+  function updateButton() {
+    button.classList.toggle('active', active);
+    button.title = active
+      ? 'Tắt định vị vị trí hiện tại'
+      : 'Định vị vị trí hiện tại';
+  }
+
+  //Hàm bật vị trí
+  function start() {
+    active = true;
+    hasZoomed = false;
+    positionLayer.setVisible(true);
+    geolocation.setTracking(true);
+    updateButton();
+  }
+
+  //Hàm tắt vị trí
+  function stop() {
+    active = false;
+    hasZoomed = false;
+    geolocation.setTracking(false);
+    positionFeature.setGeometry(null);
+    positionLayer.setVisible(false);
+    updateButton();
+  }
+
+  //Hàm bật/tắt vị trí
+  function toggle() {
+    if (active) {
+      stop();
+      return;
+    }
+    beforeStart();
+    start();
+  }
+
+  //Hàm xử lí khi vị trí thay đổi
+  geolocation.on('change:position', function () {
+    if (!active) return;
+
+    const coordinates = geolocation.getPosition(); //Lấy tọa độ hiện tại của người dùng
+    if (!coordinates) return;
+
+    //Cập nhật vị trí điểm
+    positionFeature.setGeometry(
+      new Point(coordinates)
+    );
+    positionLayer.setVisible(true);
+
+    //Đưa bản đồ tới vị trí mới
+    if (!hasZoomed) {
+      map.getView().animate({
+        center: coordinates,
+        zoom: 15,
+        duration: 800
+      });
+      hasZoomed = true;
+    }
+  });
+
+  //Xử lí khi có lỗi xảy ra
+  geolocation.on('error', function (error) {
+    alert( 'Không lấy được vị trí: ' + error.message);
+    stop();
+  });
+
+  button.onclick = toggle;
+
+  return {
+    button,
+    control,
+    positionLayer,
+    start,
+    stop,
+    toggle
+  };
+}
+//#endregion

@@ -1,6 +1,6 @@
 import { transform, transformExtent, get as getProjection } from 'ol/proj.js';
 import { GEOSERVER_CONFIG, RASTER_LAYER_CONFIGS } from '../config/layers.js';
-import { RASTER_PRESENTATION_TYPES } from './rasterLayers.js';
+import { RASTER_PRESENTATION_TYPES } from './rasterManager.js';
 import { requestJson } from './apiClient.js';
 import { makePanelDraggable } from './toolUtils.js';
 

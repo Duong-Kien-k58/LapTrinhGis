@@ -1,8 +1,35 @@
-import { RASTER_LAYER_CONFIGS, GEOSERVER_CONFIG } from '../config/layers.js'
-import { RASTER_PRESENTATION_TYPES, createPublishedRasterLayer } from './rasterLayers.js'
-import { requestJson } from './apiClient.js'
-import { createToolPanel } from './toolUtils.js'
+//#region Imports
+import TileLayer from 'ol/layer/Tile.js';
+import TileWMS from 'ol/source/TileWMS.js';
+import { RASTER_LAYER_CONFIGS, GEOSERVER_CONFIG } from '../config/layers.js';
+import { requestJson } from './apiClient.js';
+import { createToolPanel, loadWmsImage } from './toolUtils.js';
+//#endregion
 
+//#region 1. Loại trình bày và tạo lớp raster
+export const RASTER_PRESENTATION_TYPES = [
+  { id: 'satellite', title: 'Ảnh vệ tinh' },
+  { id: 'aerial', title: 'Ảnh hàng không' },
+  { id: 'dem', title: 'Dữ liệu DEM' },
+  { id: 'thematic', title: 'Raster chuyên đề' }
+];
+
+export function createPublishedRasterLayer(raster) {
+  const layer = new TileLayer({
+    visible: false,
+    source: new TileWMS({
+      tileLoadFunction: loadWmsImage,
+      url: GEOSERVER_CONFIG.wmsUrl,
+      params: { LAYERS: raster.name, TILED: true, FORMAT: 'image/png', TRANSPARENT: true },
+      serverType: 'geoserver', crossOrigin: 'anonymous'
+    })
+  });
+  layer.setProperties({ title: raster.title, configId: `raster_${raster.name}`, layerKind: 'raster', rasterName: raster.name, rasterMetadata: raster });
+  return layer;
+}
+//#endregion
+
+//#region 2. Quản trị, xem trước và xuất bản raster
 const RASTER_API_URL = `${GEOSERVER_CONFIG.backendUrl.replace(/\/features$/, '')}/rasters`
 const CONFIGURED_RASTERS = RASTER_LAYER_CONFIGS.map(item => ({ ...item, name: item.layerName }))
 const MAX_PREVIEW_PIXELS = 20_000_000
@@ -410,3 +437,4 @@ export function createRasterManager({ rasterGroup, thematicGroups = [], beforeOp
 
   return { open, load: loadRasters, close: () => { clearPreview(); panel.classList.remove('shown') } }
 }
+//#endregion
