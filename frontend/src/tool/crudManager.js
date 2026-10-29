@@ -8,7 +8,7 @@ import VectorLayer from 'ol/layer/Vector.js';
 import VectorSource from 'ol/source/Vector.js';
 import { Style, Fill, Stroke, Circle as CircleStyle } from 'ol/style.js';
 import { GEOSERVER_CONFIG, DEFAULT_ID_FIELDS } from '../config/layers.js';
-import { getConfiguredValue, getRequiredElement } from './toolUtils.js';
+import { getConfiguredValue, getRequiredElement, fetchWms } from './toolUtils.js';
 
 export function createCrudManager({
   map, layerConfigs, closeMenu = () => {}, cleanHighlight = () => {},
@@ -103,8 +103,8 @@ export function createCrudManager({
     return String(id).split('.').at(-1);
   }
 
-  async function requestJson(url, options = {}) {
-    const response = await fetch(url, options);
+  async function requestJson(url, options = {}, send = fetch) {
+    const response = await send(url, options);
     const text = await response.text();
     let data = {};
     try { data = text ? JSON.parse(text) : {}; }
@@ -373,7 +373,7 @@ export function createCrudManager({
         INFO_FORMAT: 'application/json', FEATURE_COUNT: 20, BUFFER: 8
       });
       if (!url) throw new Error('Không tạo được yêu cầu GetFeatureInfo');
-      const data = await requestJson(url, { signal: controller.signal });
+      const data = await requestJson(url, { signal: controller.signal }, fetchWms);
       if (selectionRequest !== controller) return;
       const crs = data.crs?.properties?.name;
       const epsg = String(crs || '').match(/EPSG(?::|::)(\d+)$/i);

@@ -216,6 +216,16 @@ export function initTooltips() {
   document.addEventListener('visibilitychange', () => { if (document.hidden) hide(); });
 }
 
+// GetFeatureInfo cũng mang theo SLD của lớp; gửi bằng POST để tránh HTTP 414.
+export function fetchWms(src, options = {}) {
+  const url = new URL(src, globalThis.location?.href || 'http://localhost/');
+  const hasStyle = [...url.searchParams.keys()].some(key => key.toUpperCase() === 'SLD_BODY');
+  if (!hasStyle && src.length < 8000) return fetch(src, options);
+  const body = new URLSearchParams(url.search);
+  url.search = '';
+  return fetch(url.href, { ...options, method: 'POST', body });
+}
+
 // SLD dài không phù hợp URL GET; GeoServer nhận cùng tham số qua form POST.
 export function loadWmsImage(image, src) {
   const element = image.getImage();

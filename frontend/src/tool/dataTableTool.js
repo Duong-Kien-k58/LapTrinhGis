@@ -1,6 +1,5 @@
 import { transform, transformExtent, get as getProjection } from 'ol/proj.js';
-import { GEOSERVER_CONFIG, RASTER_LAYER_CONFIGS } from '../config/layers.js';
-import { RASTER_PRESENTATION_TYPES } from './rasterManager.js';
+import { GEOSERVER_CONFIG, RASTER_LAYER_CONFIGS, RASTER_PRESENTATION_TYPES } from '../config/layers.js';
 import { requestJson } from './apiClient.js';
 import { makePanelDraggable } from './toolUtils.js';
 
@@ -101,13 +100,22 @@ export function createDataTableTool({ map, crudManager, rasterGroup, getRasterEx
       ['Phạm vi WGS84', metrics.wgs84Extent],
       ['Kích thước', raster.width && raster.height ? `${raster.width} × ${raster.height} px` : null],
       ['Độ phân giải', metrics.resolution],
-      ['Diện tích phủ', metrics.coverageArea],
+      ['Diện tích khung raster', metrics.coverageArea],
+      ['Dữ liệu hợp lệ trong khung (%)', technical.valid_percent_in_raster_extent],
       ['Dung lượng file', formatBytes(technical.file_size_bytes)],
       ['Số band', technical.band_count],
       ['Bits / pixel', technical.bits_per_sample],
       ['Kiểu dữ liệu pixel', technical.data_type],
       ['Kiểu mẫu pixel', technical.sample_format],
       ['NoData', technical.no_data],
+      ['Cao độ nhỏ nhất (m)', technical.value_min],
+      ['Cao độ lớn nhất (m)', technical.value_max],
+      ['Cao độ trung bình (m)', technical.value_mean],
+      ['Độ lệch chuẩn cao độ (m)', technical.value_stddev],
+      ['Hệ cao độ đứng', technical.vertical_datum],
+      ['Ngày báo cáo chất lượng', technical.qa_report_date],
+      ['Ô thiếu trong tỉnh (theo báo cáo QA)', technical.qa_report?.Con_thieu],
+      ['Lưu ý chất lượng', technical.quality_note],
       ['Ngày tạo', raster.created_at ? new Date(raster.created_at).toLocaleString('vi-VN') : null],
       ['Ngày cập nhật', raster.updated_at ? new Date(raster.updated_at).toLocaleString('vi-VN') : null],
     ]

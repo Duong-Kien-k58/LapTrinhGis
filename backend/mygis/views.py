@@ -5,6 +5,8 @@ from django.db import DatabaseError, connection
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
+from .responses import error, success
+
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +19,12 @@ SRID = 4326
 # Chỉ các bảng và trường được khai báo tại đây mới có thể được CRUD.
 # geometry_type là kiểu geometry chuẩn đang lưu trong PostGIS.
 LAYER_CONFIG = {
-    'ub_tinh': {
-        'table': 'ub_tinh',
+    'tthc': {
+        'table': 'tthc',
         'id_field': 'gid',
         'geom_field': 'geom',
         'geometry_type': 'Point',
-        'fields': ['ten', 'caphc', 'tinh'],
+        'fields': ['tentinh', 'tinhly', 'nguontd', 'loaidiem'],
     },
     'tinhlo': {
         'table': 'tinhlo',
@@ -79,7 +81,7 @@ LAYER_CONFIG = {
         'id_field': 'gid',
         'geom_field': 'geom',
         'geometry_type': 'MultiPolygon',
-        'fields': ['ten'],
+        'fields': ['ten', 'name_en', 'adm0_a3', 'iso_a2', 'iso_a3', 'type', 'continent', 'label_x', 'label_y'],
     },
 }
 
@@ -95,46 +97,24 @@ def get_layer_config(layer_name):
     return LAYER_CONFIG.get(layer_name)
 
 
-def json_error(message, status=400):
-    return JsonResponse(
-        {
-            'success': False,
-            'message': message,
-        },
-        status=status,
-    )
-
-
-def json_success(message, data=None):
-    result = {
-        'success': True,
-        'message': message,
-    }
-
-    if data is not None:
-        result.update(data)
-
-    return JsonResponse(result)
-
-
 def parse_request_data(request):
     try:
         data = json.loads(request.body)
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return None, json_error('Dữ liệu JSON không hợp lệ', 400)
+        return None, error('Dữ liệu JSON không hợp lệ', 400)
 
     if not isinstance(data, dict):
-        return None, json_error('Nội dung yêu cầu phải là một đối tượng JSON', 400)
+        return None, error('Nội dung yêu cầu phải là một đối tượng JSON', 400)
 
     properties = data.get('properties', {})
     if properties is None:
         properties = {}
     if not isinstance(properties, dict):
-        return None, json_error('properties phải là một đối tượng JSON', 400)
+        return None, error('properties phải là một đối tượng JSON', 400)
 
     geometry = data.get('geometry')
     if geometry is not None and not isinstance(geometry, dict):
-        return None, json_error('geometry phải là một đối tượng GeoJSON', 400)
+        return None, error('geometry phải là một đối tượng GeoJSON', 400)
 
     return {
         'properties': properties,
@@ -206,11 +186,11 @@ def get_allowed_property_values(properties, config):
 @csrf_exempt
 def add_feature(request, layer_name):
     if request.method != 'POST':
-        return json_error('Chỉ chấp nhận phương thức POST', 405)
+        return error('Chỉ chấp nhận phương thức POST', 405)
 
     config = get_layer_config(layer_name)
     if config is None:
-        return json_error('Lớp dữ liệu không tồn tại', 404)
+        return error('Lớp dữ liệu không tồn tại', 404)
 
     data, error_response = parse_request_data(request)
     if error_response is not None:
@@ -221,7 +201,7 @@ def add_feature(request, layer_name):
 
     geometry_error = validate_geometry(geometry, config, required=True)
     if geometry_error:
-        return json_error(geometry_error, 400)
+        return error(geometry_error, 400)
 
     table = config['table']
     id_field = config['id_field']
@@ -247,22 +227,22 @@ def add_feature(request, layer_name):
             new_id = cursor.fetchone()[0]
     except DatabaseError:
         logger.exception('Không thể thêm feature vào lớp %s', layer_name)
-        return json_error('Không thể thêm đối tượng vào cơ sở dữ liệu', 500)
+        return error('Không thể thêm đối tượng vào cơ sở dữ liệu', 500)
 
-    return json_success(
+    return success(
         'Thêm đối tượng thành công',
-        {'id': new_id},
+        id=new_id,
     )
 
 
 @csrf_exempt
 def edit_feature(request, layer_name, feature_id):
     if request.method != 'PUT':
-        return json_error('Chỉ chấp nhận phương thức PUT', 405)
+        return error('Chỉ chấp nhận phương thức PUT', 405)
 
     config = get_layer_config(layer_name)
     if config is None:
-        return json_error('Lớp dữ liệu không tồn tại', 404)
+        return error('Lớp dữ liệu không tồn tại', 404)
 
     data, error_response = parse_request_data(request)
     if error_response is not None:
@@ -273,7 +253,7 @@ def edit_feature(request, layer_name, feature_id):
 
     geometry_error = validate_geometry(geometry, config)
     if geometry_error:
-        return json_error(geometry_error, 400)
+        return error(geometry_error, 400)
 
     table = config['table']
     id_field = config['id_field']
@@ -288,7 +268,7 @@ def edit_feature(request, layer_name, feature_id):
         params.append(json.dumps(geometry))
 
     if not set_parts:
-        return json_error('Không có dữ liệu để sửa', 400)
+        return error('Không có dữ liệu để sửa', 400)
 
     params.append(feature_id)
     set_sql = ', '.join(set_parts)
@@ -303,29 +283,29 @@ def edit_feature(request, layer_name, feature_id):
         with connection.cursor() as cursor:
             cursor.execute(sql, params)
             if cursor.rowcount == 0:
-                return json_error('Không tìm thấy đối tượng cần sửa', 404)
+                return error('Không tìm thấy đối tượng cần sửa', 404)
     except DatabaseError:
         logger.exception(
             'Không thể sửa feature %s của lớp %s',
             feature_id,
             layer_name,
         )
-        return json_error('Không thể sửa đối tượng trong cơ sở dữ liệu', 500)
+        return error('Không thể sửa đối tượng trong cơ sở dữ liệu', 500)
 
-    return json_success(
+    return success(
         'Sửa đối tượng thành công',
-        {'id': feature_id},
+        id=feature_id,
     )
 
 
 @csrf_exempt
 def delete_feature(request, layer_name, feature_id):
     if request.method != 'DELETE':
-        return json_error('Chỉ chấp nhận phương thức DELETE', 405)
+        return error('Chỉ chấp nhận phương thức DELETE', 405)
 
     config = get_layer_config(layer_name)
     if config is None:
-        return json_error('Lớp dữ liệu không tồn tại', 404)
+        return error('Lớp dữ liệu không tồn tại', 404)
 
     table = config['table']
     id_field = config['id_field']
@@ -339,16 +319,16 @@ def delete_feature(request, layer_name, feature_id):
         with connection.cursor() as cursor:
             cursor.execute(sql, [feature_id])
             if cursor.rowcount == 0:
-                return json_error('Không tìm thấy đối tượng cần xóa', 404)
+                return error('Không tìm thấy đối tượng cần xóa', 404)
     except DatabaseError:
         logger.exception(
             'Không thể xóa feature %s của lớp %s',
             feature_id,
             layer_name,
         )
-        return json_error('Không thể xóa đối tượng khỏi cơ sở dữ liệu', 500)
+        return error('Không thể xóa đối tượng khỏi cơ sở dữ liệu', 500)
 
-    return json_success(
+    return success(
         'Xóa đối tượng thành công',
-        {'id': feature_id},
+        id=feature_id,
     )

@@ -2,7 +2,8 @@
 import * as Cesium from 'cesium';
 import ImageWMS from 'ol/source/ImageWMS.js';
 import TileWMS from 'ol/source/TileWMS.js';
-import { get as getProjection } from 'ol/proj.js';
+import { get as getProjection, fromLonLat } from 'ol/proj.js';
+import { STARTUP_3D_VIEW } from '../config/layers.js';
 //#endregion
 
 //#region 1. Đồng bộ cây lớp OpenLayers và Cesium
@@ -514,6 +515,25 @@ let osmBuildings = null, buildingsLoading = false, buildingsWanted = false;
 let identifySequence = 0;
 let lastTileError = 0, effectsPanel, messageTimer;
 let selectedLocation = null;
+let waterMaterial;
+let fogStage;
+const weather = {};
+const lightScratch = new Cesium.Cartesian3();
+const weatherOffset = new Cesium.Cartesian3();
+const previousWeatherCamera = new Cesium.Cartesian3();
+let effectsFrameTime = 0;
+const EFFECTS = [
+  ['water', 'Mặt nước chuyển động', 'Độ rõ và tốc độ gợn sóng tại vùng có mặt nạ nước.'],
+  ['lighting', 'Chiếu sáng địa hình', 'Ánh sáng xiên làm rõ sườn núi, thung lũng và độ dốc.'],
+  ['fog', 'Sương khí quyển', 'Tăng độ dày màn sương chân trời khi nhìn gần địa hình.'],
+  ['atmosphere', 'Khí quyển quanh Trái Đất', 'Tăng độ sáng quầng khí quyển và sắc xanh ở chân trời.'],
+  ['rain', 'Mưa', 'Mô phỏng hạt mưa quanh điểm nhìn, không phải thời tiết thực.'],
+  ['snow', 'Tuyết', 'Mô phỏng bông tuyết; tăng cường độ để tuyết rơi dày hơn.']
+];
+const effectTargets = Object.fromEntries(EFFECTS.map(([id]) => [id, 0]));
+const effectValues = { ...effectTargets };
+const disabledEffects = { ...effectTargets };
+const effectControls = new Map();
 const buttons = {};
 const svg = path => `<svg viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
 //#endregion
@@ -539,6 +559,9 @@ export async function createCesiumTool(map) {
   const scene = ol3d.getCesiumScene();
   scene.globe.enableLighting = false;
   scene.globe.showWaterEffect = false;
+  scene.fog.enabled = false;
+  scene.globe.showGroundAtmosphere = false;
+  if (scene.skyAtmosphere) scene.skyAtmosphere.show = false;
   scene.globe.depthTestAgainstTerrain = true;
   scene.canvas.tabIndex = 0;
   markerSource = new Cesium.CustomDataSource('Điểm tra cứu 3D');
@@ -565,14 +588,20 @@ export async function createCesiumTool(map) {
     if (event.detail?.name !== 'cesium') stopAnalysis();
   });
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && identifyHandler) { stopIdentify(); setHeaderInfo('Tra cứu 3D đã tắt.'); }
+    if (event.key !== 'Escape') return;
+    if (!effectsPanel.hidden) effectsPanel.querySelector('header button').click();
+    if (identifyHandler) { stopIdentify(); setHeaderInfo('Tra cứu 3D đã tắt.'); }
   });
   return ol3d;
 }
 
 function getTerrainProvider() {
   if (!terrainPromise) terrainPromise = Cesium.createWorldTerrainAsync({ requestVertexNormals: true, requestWaterMask: true })
-    .then(provider => { ol3d.getCesiumScene().terrainProvider = provider; return provider; })
+    .then(provider => {
+      ol3d.getCesiumScene().terrainProvider = provider;
+      if (effectsPanel) updateEffects();
+      return provider;
+    })
     .catch(error => { terrainPromise = null; throw error; });
   return terrainPromise;
 }
@@ -623,7 +652,10 @@ function createUI() {
     button('profile', svg('<path d="M3 3v18h18M5 17l4-7 4 4 4-9 4 4M9 21v-3M15 21v-3"/>'), 'Vẽ tuyến xem mặt cắt địa hình', () => terrainTools.start('profile')),
   );
   pressed(buttons.buildings, false);
-  document.getElementById('primary-map-controls').append(container);
+  // Giữ nút chuyển 2D/3D ngay dưới danh sách lớp trong cả hai chế độ.
+  const primaryControls = document.getElementById('primary-map-controls');
+  const layerCatalogButton = primaryControls.querySelector('.layer-catalog-button');
+  primaryControls.insertBefore(container, layerCatalogButton ? layerCatalogButton.nextSibling : primaryControls.firstChild);
   headerInfo = document.createElement('div');
   headerInfo.id = 'cesium-header-info';
   headerInfo.hidden = true;
@@ -640,16 +672,51 @@ function createUI() {
   infoPanel.setAttribute('role', 'status');
   document.querySelector('.map-wrapper').append(infoPanel);
   effectsPanel = createPanel('cesium-effects-panel', 'Hiệu ứng cảnh 3D', `
-    <label class="cesium-option"><span>Mặt nước chuyển động<small>Hiển thị tại vùng có water mask</small></span><input type="checkbox" data-effect="water"></label>
-    <label class="cesium-option"><span>Chiếu sáng địa hình<small>Ánh sáng theo hướng nhìn</small></span><input type="checkbox" data-effect="lighting"></label>
-    <label class="cesium-option"><span>Sương khí quyển</span><input type="checkbox" data-effect="fog" checked></label>
-    <label class="cesium-option"><span>Khí quyển quanh Trái Đất</span><input type="checkbox" data-effect="atmosphere" checked></label>`);
-  effectsPanel.querySelectorAll('input').forEach(input => input.addEventListener('change', () => setEffect(input.dataset.effect, input.checked)));
-  ol3d.getCesiumScene().preRender.addEventListener(() => {
+    <div class="cesium-effects-summary"><span data-effects-summary role="status">Chưa bật hiệu ứng</span><button type="button" data-effects-reset>Tắt tất cả</button></div>
+    ${EFFECTS.map(([id, title, hint]) => `
+    <div class="cesium-effect" data-effect-card="${id}">
+      <label class="cesium-option"><span>${title}<small id="effect-hint-${id}">${hint}</small></span><input type="checkbox" role="switch" data-effect="${id}" aria-describedby="effect-hint-${id}"></label>
+      <label class="cesium-effect-strength" for="effect-${id}"><span>Cường độ <output data-effect-value="${id}" for="effect-${id}">50%</output></span>
+        <input id="effect-${id}" data-strength="${id}" aria-label="Cường độ ${title.toLowerCase()}" type="range" min="0" max="100" value="50" disabled>
+      </label>
+    </div>`).join('')}
+    <p class="cesium-effects-note">0%: không tác động · 100%: mạnh nhất. Mưa và tuyết là mô phỏng; sóng cần địa hình có mặt nạ nước.</p>`);
+  for (const [id] of EFFECTS) effectControls.set(id, {
+    toggle: effectsPanel.querySelector(`[data-effect="${id}"]`),
+    slider: effectsPanel.querySelector(`[data-strength="${id}"]`),
+    output: effectsPanel.querySelector(`[data-effect-value="${id}"]`),
+    card: effectsPanel.querySelector(`[data-effect-card="${id}"]`),
+  });
+  effectsPanel.querySelector('[data-effects-reset]').addEventListener('click', () => {
+    effectControls.forEach(({ toggle }) => { toggle.checked = false; });
+    updateEffects();
+  });
+  buttons.effects.setAttribute('aria-controls', effectsPanel.id);
+  buttons.effects.setAttribute('aria-expanded', 'false');
+  effectsPanel.addEventListener('input', updateEffects);
+  document.addEventListener('visibilitychange', () => { resetEffectsFrame(); updateEffects(); });
+  updateEffects();
+  Cesium.Cartesian3.clone(ol3d.getCesiumScene().camera.positionWC, previousWeatherCamera);
+  ol3d.getCesiumScene().preUpdate.addEventListener(() => {
     const scene = ol3d.getCesiumScene();
-    if (scene.globe.enableLighting && scene.light instanceof Cesium.DirectionalLight) {
-      scene.light.direction = Cesium.Cartesian3.negate(Cesium.Cartesian3.normalize(scene.camera.positionWC, new Cesium.Cartesian3()), new Cesium.Cartesian3());
+    const now = performance.now();
+    const seconds = effectsFrameTime ? (now - effectsFrameTime) / 1000 : 0;
+    effectsFrameTime = now;
+    // Không phát bù hàng nghìn hạt sau khi tab hoặc máy bị khựng lâu.
+    if (seconds > 2) {
+      Object.values(weather).forEach(particles => scene.primitives.remove(particles));
+      Object.keys(weather).forEach(type => delete weather[type]);
     }
+    for (const [id] of EFFECTS) effectValues[id] = smoothEffectStrength(effectValues[id], effectTargets[id], seconds);
+    applyEffectValues(scene);
+    if (waterMaterial && scene.globe.material === waterMaterial) {
+      waterMaterial.uniforms.time += Math.min(seconds, 0.1) * (0.08 + effectValues.water * 0.4);
+    }
+    Cesium.Cartesian3.subtract(scene.camera.positionWC, previousWeatherCamera, weatherOffset);
+    Cesium.Cartesian3.clone(scene.camera.positionWC, previousWeatherCamera);
+    Object.values(weather).forEach(particles => {
+      Cesium.Matrix4.fromTranslation(scene.camera.positionWC, particles.modelMatrix);
+    });
   });
 }
 
@@ -834,23 +901,176 @@ function styleBuildings() {
 
 //#endregion
 
-//#region 5.7. Hiệu ứng, camera và chuyển chế độ 2D/3D
-function setEffect(effect, enabled) {
+//#region 5.7. Hiệu ứng cảnh: cường độ, ánh sáng, khí quyển và thời tiết
+function resetEffectsFrame() {
+  effectsFrameTime = 0;
+  Cesium.Cartesian3.clone(ol3d.getCesiumScene().camera.positionWC, previousWeatherCamera);
+  Cesium.Cartesian3.clone(Cesium.Cartesian3.ZERO, weatherOffset);
+}
+
+export function smoothEffectStrength(current, target, seconds) {
+  if (target === 0 || Math.abs(target - current) < 0.001) return target;
+  return current + (target - current) * (1 - Math.exp(-12 * Math.min(seconds, 0.1)));
+}
+
+function updateLightDirection(scene) {
+  // Chiếu xiên từ trên trái thay vì rọi thẳng: tạo chênh sáng giữa các sườn núi.
+  const direction = scene.light.direction;
+  Cesium.Cartesian3.normalize(scene.camera.positionWC, direction);
+  Cesium.Cartesian3.negate(direction, direction);
+  Cesium.Cartesian3.add(direction, Cesium.Cartesian3.multiplyByScalar(scene.camera.rightWC, 0.6, lightScratch), direction);
+  Cesium.Cartesian3.add(direction, Cesium.Cartesian3.multiplyByScalar(scene.camera.upWC, -0.4, lightScratch), direction);
+  Cesium.Cartesian3.normalize(direction, direction);
+}
+
+function createWeather(scene, type) {
+  const snow = type === 'snow';
+  const image = document.createElement('canvas');
+  image.width = snow ? 32 : 4;
+  image.height = 32;
+  const context = image.getContext('2d');
+  if (snow) {
+    const gradient = context.createRadialGradient(16, 16, 0, 16, 16, 14);
+    gradient.addColorStop(0, '#fff');
+    gradient.addColorStop(1, '#ffffff00');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 32, 32);
+  } else {
+    context.strokeStyle = '#c8e4ff';
+    context.lineWidth = 1.3;
+    context.beginPath(); context.moveTo(2, 1); context.lineTo(1, 31); context.stroke();
+  }
+  const movement = new Cesium.Cartesian3();
+  return scene.primitives.add(new Cesium.ParticleSystem({
+    image, emitter: new Cesium.SphereEmitter(180), speed: 0,
+    modelMatrix: Cesium.Matrix4.fromTranslation(scene.camera.positionWC),
+    particleLife: snow ? 8 : 3,
+    imageSize: new Cesium.Cartesian2(snow ? 8 : 3, snow ? 8 : 22),
+    startColor: Cesium.Color.WHITE.withAlpha(snow ? 0.9 : 0.7),
+    endColor: Cesium.Color.WHITE.withAlpha(0),
+    updateCallback(particle, seconds) {
+      // Hạt bám quanh điểm nhìn khi pan/zoom, không bị bỏ lại ở vị trí cũ.
+      Cesium.Cartesian3.add(particle.position, weatherOffset, particle.position);
+      const intensity = effectValues[type];
+      particle.startColor.alpha = (snow ? 0.9 : 0.7) * Math.sqrt(intensity);
+      particle.imageSize.x = snow ? 4 + 6 * intensity : 2 + 2 * intensity;
+      particle.imageSize.y = snow ? particle.imageSize.x : 12 + 14 * intensity;
+      Cesium.Cartesian3.normalize(particle.position, movement);
+      Cesium.Cartesian3.multiplyByScalar(movement, -(snow ? 5 : 55) * seconds, movement);
+      Cesium.Cartesian3.add(particle.position, movement, particle.position);
+      if (snow) {
+        Cesium.Cartesian3.multiplyByScalar(scene.camera.rightWC, Math.sin(particle.age * 2) * seconds * 2, movement);
+        Cesium.Cartesian3.add(particle.position, movement, particle.position);
+      }
+    }
+  }));
+}
+
+function updateEffects() {
   const scene = ol3d.getCesiumScene();
-  if (effect === 'water') {
-    scene.globe.showWaterEffect = enabled;
-    if (enabled) showInfo('Hiệu ứng sóng áp dụng tại vùng có mặt nạ nước của địa hình, chủ yếu biển và đại dương.');
+  let count = 0;
+  for (const [id, { toggle, slider, output, card }] of effectControls) {
+    const checked = toggle.checked;
+    slider.disabled = !checked;
+    output.textContent = `${slider.value}%`;
+    effectTargets[id] = checked ? Number(slider.value) / 100 : 0;
+    if (effectTargets[id] === 0) effectValues[id] = 0;
+    card.classList.toggle('is-active', effectTargets[id] > 0);
+    slider.style.setProperty('--effect-progress', `${slider.value}%`);
+    if (effectTargets[id] > 0) count++;
   }
-  if (effect === 'lighting') {
-    scene.globe.enableLighting = enabled;
-    scene.light = enabled ? new Cesium.DirectionalLight({ direction: Cesium.Cartesian3.negate(Cesium.Cartesian3.normalize(scene.camera.positionWC, new Cesium.Cartesian3()), new Cesium.Cartesian3()), intensity: 1.5 }) : new Cesium.SunLight();
-  }
-  if (effect === 'fog') scene.fog.enabled = enabled;
-  if (effect === 'atmosphere') { if (scene.skyAtmosphere) scene.skyAtmosphere.show = enabled; scene.globe.showGroundAtmosphere = enabled; }
-  pressed(buttons.effects, [...effectsPanel.querySelectorAll('input')].some(input => input.checked));
+  effectsPanel.querySelector('[data-effects-summary]').textContent = count ? `Đang bật ${count}/${EFFECTS.length} hiệu ứng` : 'Chưa bật hiệu ứng';
+  effectsPanel.querySelector('[data-effects-reset]').disabled = ![...effectControls.values()].some(({ toggle }) => toggle.checked);
+  applyEffectValues(scene);
+  pressed(buttons.effects, count > 0);
   scene.requestRender();
 }
 
+function applyEffectValues(scene) {
+  const strength = is3DEnabled() && !document.hidden ? effectValues : disabledEffects;
+  scene.globe.enableLighting = strength.lighting > 0;
+  if (scene.globe.enableLighting) {
+    if (!(scene.light instanceof Cesium.DirectionalLight)) scene.light = new Cesium.DirectionalLight({ direction: Cesium.Cartesian3.negate(scene.camera.positionWC, new Cesium.Cartesian3()) });
+    // Tăng tương phản sườn núi thay vì tăng phơi sáng toàn ảnh lên trắng.
+    scene.light.intensity = 1;
+    scene.globe.vertexShadowDarkness = 1 - strength.lighting * 0.65;
+    scene.globe.lambertDiffuseMultiplier = strength.lighting * 0.9;
+    updateLightDirection(scene);
+  } else if (scene.light instanceof Cesium.DirectionalLight) scene.light = new Cesium.SunLight();
+  // Chỉ pha màu theo khoảng cách, không dùng sương để cắt bớt ô địa hình.
+  scene.fog.enabled = false;
+  if (strength.fog > 0 && !fogStage) {
+    fogStage = scene.postProcessStages.add(new Cesium.PostProcessStage({
+      name: 'webgis-fog',
+      uniforms: { strength: 0, cameraHeight: () => scene.camera.positionCartographic.height },
+      fragmentShader: `uniform sampler2D colorTexture;
+        uniform sampler2D depthTexture;
+        uniform float strength;
+        uniform float cameraHeight;
+        in vec2 v_textureCoordinates;
+        void main() {
+          vec4 color = texture(colorTexture, v_textureCoordinates);
+          float depth = texture(depthTexture, v_textureCoordinates).r;
+          vec4 positionEC = czm_windowToEyeCoordinates(gl_FragCoord.xy, depth);
+          float distanceToEye = length(positionEC.xyz / positionEC.w);
+          float distanceInFog = max(0.0, distanceToEye - max(cameraHeight, 0.0) * 0.7);
+          float fade = 1.0 - smoothstep(300000.0, 800000.0, cameraHeight);
+          float fog = (1.0 - exp(-pow(distanceInFog * 0.00004 * strength, 2.0))) * fade;
+          if (depth >= 1.0) fog = 0.0;
+          out_FragColor = vec4(mix(color.rgb, vec3(0.68, 0.76, 0.82), fog * 0.9), color.a);
+        }`
+    }));
+  }
+  if (fogStage) {
+    fogStage.enabled = strength.fog > 0 && scene.camera.positionCartographic.height < 800000;
+    fogStage.uniforms.strength = strength.fog;
+  }
+  scene.globe.showGroundAtmosphere = strength.atmosphere > 0;
+  scene.globe.atmosphereLightIntensity = strength.atmosphere * 14;
+  if (scene.skyAtmosphere) {
+    scene.skyAtmosphere.show = strength.atmosphere > 0;
+    scene.skyAtmosphere.atmosphereLightIntensity = strength.atmosphere * 70;
+  }
+  // Sóng mặc định có cường độ cố định; chỉ dùng material điều khiển được để 1% khác 100%.
+  scene.globe.showWaterEffect = false;
+  if (strength.water > 0 && scene.terrainProvider.hasWaterMask) {
+    waterMaterial ??= new Cesium.Material({ fabric: {
+      type: 'WaterMotion', uniforms: { strength: 0.5, time: 0, normalMap: Cesium.buildModuleUrl('Assets/Textures/waterNormalsSmall.jpg') },
+      source: `czm_material czm_getMaterial(czm_materialInput materialInput) {
+        czm_material material = czm_getDefaultMaterial(materialInput);
+        material.alpha = 0.0;
+        #ifdef HAS_WATER_MASK
+        float visibility = 1.0 - smoothstep(100000.0, 500000.0, length(materialInput.positionToEyeEC));
+        if (visibility <= 0.0) return material;
+        vec3 positionWC = (czm_inverseView * vec4(-materialInput.positionToEyeEC, 1.0)).xyz;
+        vec2 uv = czm_ellipsoidTextureCoordinates(normalize(positionWC));
+        vec4 noise = czm_getWaterNoise(normalMap, uv * 1250000.0, time, 0.0);
+        float crest = clamp(0.5 + noise.x * 4.0 + noise.y * 3.0, 0.0, 1.0);
+        material.diffuse = mix(vec3(0.02, 0.14, 0.22), vec3(0.75, 0.88, 0.94), crest * crest);
+        material.alpha = clamp(materialInput.waterMask, 0.0, 1.0) * strength * visibility * 0.65;
+        #endif
+        return material;
+      }`
+    } });
+    waterMaterial.uniforms.strength = strength.water;
+    scene.globe.material = waterMaterial;
+  } else scene.globe.material = undefined;
+  for (const type of ['rain', 'snow']) {
+    if (strength[type] > 0 && is3DEnabled() && !document.hidden) {
+      weather[type] ??= createWeather(scene, type);
+      const area = scene.canvas.clientWidth * scene.canvas.clientHeight / (1440 * 900);
+      weather[type].emissionRate = strength[type] * (type === 'rain' ? 1400 : 320) * Cesium.Math.clamp(area, 0.5, 1.25);
+      weather[type].startColor.alpha = (type === 'snow' ? 0.9 : 0.7) * Math.sqrt(strength[type]);
+    } else if (weather[type]) {
+      scene.primitives.remove(weather[type]);
+      delete weather[type];
+    }
+  }
+}
+
+//#endregion
+
+//#region 5.8. Camera và chuyển chế độ 2D/3D
 function zoomCamera(direction) {
   if (!is3DEnabled()) return;
   const scene = ol3d.getCesiumScene();
@@ -874,8 +1094,10 @@ function resetViewDirection() {
 function setEnabled(enabled) {
   if (!ol3d || enabled === ol3d.getEnabled()) return;
   stopAnalysis();
-  document.dispatchEvent(new CustomEvent('webgis-tool-activate', { detail: { name: 'cesium' } }));
+  document.dispatchEvent(new CustomEvent('webgis-tool-activate', { detail: { name: 'cesium', viewModeChange: true } }));
   ol3d.setEnabled(enabled);
+  resetEffectsFrame();
+  updateEffects();
   document.querySelector('.map-wrapper').classList.toggle('is-3d', enabled);
   Object.values(buttons).forEach(control => { control.hidden = !enabled; });
   headerInfo.hidden = !enabled;
@@ -892,10 +1114,31 @@ function setEnabled(enabled) {
   toggleButton.title = enabled ? 'Chuyển sang chế độ 2D' : 'Chuyển sang chế độ 3D';
   toggleButton.setAttribute('aria-label', toggleButton.title);
   pressed(toggleButton, enabled);
+  document.dispatchEvent(new CustomEvent('webgis-view-mode-change', { detail: { enabled } }));
 }
 
 export function toggle3D() { if (ol3d) setEnabled(!ol3d.getEnabled()); }
 export function enable3D() { setEnabled(true); }
+export function applyStartupCamera(bridge, map) {
+  const { center, distance, tilt } = STARTUP_3D_VIEW;
+  const view = map.getView();
+  view.cancelAnimations();
+  view.setCenter(fromLonLat(center, view.getProjection()));
+  view.setRotation(0);
+  bridge.getCamera().setTilt(Cesium.Math.toRadians(tilt));
+  bridge.getCamera().setDistance(distance);
+  const scene = bridge.getCesiumScene();
+  scene.camera.setView({ orientation: { heading: scene.camera.heading, pitch: scene.camera.pitch, roll: 0 } });
+  scene.requestRender();
+}
+export function showStartup3D() {
+  if (!ol3d) return;
+  setEnabled(true);
+  applyStartupCamera(ol3d, map2D);
+  document.dispatchEvent(new CustomEvent('webgis-coordinate-update', { detail: {
+    longitude: STARTUP_3D_VIEW.center[0], latitude: STARTUP_3D_VIEW.center[1]
+  } }));
+}
 export function disable3D() { setEnabled(false); }
 export function is3DEnabled() { return ol3d ? ol3d.getEnabled() : false; }
 export function getCesiumScene() { return ol3d?.getCesiumScene() || null; }

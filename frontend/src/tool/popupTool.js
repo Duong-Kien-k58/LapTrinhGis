@@ -19,7 +19,7 @@ proj4.defs('EPSG:3405', '+proj=utm +zone=48 +ellps=WGS84 +towgs84=-191.90441429,
 register(proj4);
 import { toLonLat, transform } from 'ol/proj.js';
 import { Style, Fill, Stroke, Circle as CircleStyle } from 'ol/style.js';
-import { escapeHTML, getConfiguredValue } from './toolUtils.js';
+import { escapeHTML, getConfiguredValue, fetchWms } from './toolUtils.js';
 
 export function createPopupTool({ map, layerConfigs, groupMap = {} }) {
   // Trạng thái công cụ và mã request dùng để loại bỏ request cũ.
@@ -397,7 +397,7 @@ export function createPopupTool({ map, layerConfigs, groupMap = {} }) {
     setStatus(`Đang tìm đối tượng trong lớp: ${config.title}...`);
 
     try {
-      const response = await fetch(url);
+      const response = await fetchWms(url);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }

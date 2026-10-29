@@ -1,8 +1,14 @@
 from django.urls import path
 from . import views
 from . import raster
+from . import slope_analysis
 
 urlpatterns = [
+    path('slope-jobs/', slope_analysis.jobs),
+    path('slope-jobs/<uuid:job_id>/', slope_analysis.job_detail),
+    path('slope-jobs/<uuid:job_id>/<str:artifact>/', slope_analysis.job_detail),
+    path('dem-uploads/', slope_analysis.uploads),
+    path('dem-uploads/<uuid:upload_id>/', slope_analysis.upload_detail),
     path('health/', views.health),
     path('rasters/csrf/', raster.csrf_token),
     path('rasters/', raster.list_rasters),

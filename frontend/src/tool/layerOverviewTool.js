@@ -57,7 +57,7 @@ function copyWmsLayer(layer) {
 }
 
 // Bản đồ overview chỉ hiển thị một lớp đang bật để lớp đó luôn dễ nhận biết.
-export function createLayerOverviewTool({ map, thematicGroups, rasterGroup }) {
+export function createLayerOverviewTool({ map, thematicGroups, rasterGroup, rasterGroups = [rasterGroup] }) {
   const baseLayer = createOverviewBaseLayer(map)
   const control = new OverviewMap({
     collapsed: false,
@@ -99,7 +99,7 @@ export function createLayerOverviewTool({ map, thematicGroups, rasterGroup }) {
   let updateVersion = 0
 
   function getActiveLayers() {
-    const groups = [...thematicGroups, rasterGroup]
+    const groups = [...thematicGroups, ...rasterGroups]
     return groups.flatMap((group) => {
       if (!group.getVisible()) return []
       return group.getLayers().getArray()
@@ -278,7 +278,7 @@ export function createLayerOverviewTool({ map, thematicGroups, rasterGroup }) {
     }
   })
 
-  ;[...thematicGroups, rasterGroup].forEach((group) => {
+  ;[...thematicGroups, ...rasterGroups].forEach((group) => {
     group.on('change:visible', () => { if (activeKind) refresh() })
     group.getLayers().on('add', (event) => {
       event.element.on('change:visible', () => { if (activeKind) refresh() })

@@ -7,6 +7,9 @@ class RasterMetadata(models.Model):  # Model lưu thông tin mô tả raster
         SATELLITE = "satellite", "Ảnh vệ tinh"
         AERIAL = "aerial", "Ảnh hàng không"
         DEM = "dem", "Dữ liệu DEM"
+        DSM = "dsm", "Mô hình số bề mặt DSM"
+        DTM = "dtm", "Mô hình số địa hình DTM"
+        UAV = "uav", "Ảnh UAV"
         THEMATIC = "thematic", "Raster chuyên đề"
 
     name = models.CharField(max_length=63, unique=True)  # Tên raster, không được trùng

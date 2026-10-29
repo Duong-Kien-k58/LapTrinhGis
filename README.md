@@ -63,6 +63,48 @@ python --version
 > hiển thị đầy đủ, hãy xin file dữ liệu hoặc bản sao lưu database từ người quản
 > lý dự án.
 
+## Cập nhật máy đã chạy được bản trước
+
+Dừng Django và Vite trước khi cập nhật. Giữ nguyên `.env`, môi trường Python,
+database PostGIS và cấu hình GeoServer đang dùng; không chép đè `.env` bằng file mẫu.
+Tại thư mục gốc dự án:
+
+```powershell
+git pull --ff-only origin main
+cd frontend
+npm ci
+cd ../backend
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+.\venv\Scripts\python.exe manage.py check
+.\venv\Scripts\python.exe manage.py migrate --plan
+```
+
+**Kiểm tra dữ liệu trước khi migrate:** bản này có migration `mygis.0003`–`0005`
+đổi dữ liệu tham chiếu và căn biên quốc gia. `0003` cần sẵn các bảng PostGIS
+`public.nuocngoai_all`, `public.nuocngoai`, `public.tthc`, `public.ub_tinh`;
+`0004` cần thêm `public.vn_tinh`. Đây là dữ liệu nhập riêng, không có trong Git.
+Sao lưu database bằng pgAdmin trước khi chạy migration. Nếu máy chỉ có dữ liệu
+của bản trước và thiếu các bảng nguồn, cần nhận bộ dữ liệu tương ứng từ người
+quản lý dự án rồi nhập vào database trước; chỉ pull code không bổ sung dữ liệu này.
+Không dùng `--fake` để bỏ qua các migration thay đổi dữ liệu.
+
+Khi dữ liệu đã đủ, chạy:
+
+```powershell
+.\venv\Scripts\python.exe manage.py migrate
+.\venv\Scripts\python.exe manage.py runserver
+```
+
+Mở terminal khác tại `frontend`, chạy `npm run dev`. Kiểm tra các lớp
+`webgis:tthc`, `webgis:nuocngoai`, `webgis:ranhgioi` đã publish đúng trên GeoServer;
+`ranhgioi` là lớp ranh giới hiển thị mặc định của bản mới. Git không cập nhật
+datastore, layer hay style của GeoServer. Các DEM 10 m theo tỉnh chỉ dùng được
+sau khi publish dữ liệu riêng, không bắt buộc để mở ứng dụng.
+
+Để dùng phân tích độ dốc trên máy khác, bổ sung `DEM_GDAL_PYTHON` vào `.env`,
+trỏ tới Python có GDAL của QGIS thực tế trên máy đó (xem `.env.example`). Không
+cần cài lại toàn bộ dự án. Sau khi sửa `.env`, khởi động lại Django và Vite.
+
 ## Cài đặt
 
 ### 1. Tải mã nguồn
@@ -83,13 +125,16 @@ cd LapTrinhGis
    ```
 
 2. Nhập bản sao lưu database/dữ liệu GIS được cung cấp vào database `webgis`.
-   Các lớp có thể biên tập gồm: `ub_tinh`, `tinhlo`, `vn_tinh`, `vn_xa`, `qlo`,
+   Các lớp có thể biên tập gồm: `tthc`, `tinhlo`, `vn_tinh`, `vn_xa`, `qlo`,
    `nenbien` và `nuocngoai`.
 3. Trong GeoServer, tạo workspace `webgis`, kết nối PostGIS datastore tới
    database trên, rồi publish các layer cần dùng. Các lớp raster được cấu hình
    trong dự án là `fast_alpha` và `SRTM_30_VN_UTM`.
 4. Mở GeoServer tại `http://localhost:8080/geoserver` để kiểm tra dịch vụ đang
    chạy.
+
+Các style CSS được quản lý trực tiếp trong GeoServer → Styles, workspace `webgis`:
+`a_nuocngoai_css`, `a_ranhgioi_css` và `a_tthc_css`. Chỉnh sửa và lưu CSS tại đó.
 
 ### 3. Cấu hình môi trường và chạy backend Django
 
@@ -283,9 +328,37 @@ Mở terminal thứ hai tại thư mục gốc và chạy backend:
 
 ## Công cụ địa hình 3D
 
-Chuyển sang **3D** để dùng bộ công cụ Cesium. Các icon chỉ thao tác trên
+Ứng dụng mở thẳng vào **3D**, nhìn nghiêng về Đông Dương trên nền vệ tinh.
+Cảnh mở đầu dùng tâm 105°Đ, 16°B, khoảng cách 4.450 km, độ nghiêng 40° và
+roll 0°; chỉnh `STARTUP_3D_VIEW` trong `frontend/src/config/layers.js`.
+Mỗi lần mở trang dùng cảnh này, giữ cấu hình đã lưu của bản đồ nền và các lớp dữ liệu.
+
+Các bản đồ nền dùng cấu hình gốc trong `frontend/src/config/layers.js`:
+OpenStreetMap, OpenTopoMap và Google Satellite thuần (`lyrs=s`, `hl=en`).
+Dùng nút **2D** để trở lại bản đồ phẳng.
+
+Các icon chỉ thao tác trên
 OpenLayers 2D được ẩn; nút đưa hướng nhìn về Bắc nằm ngay dưới nút **2D**,
 giữ nguyên vị trí, độ zoom và độ nghiêng hiện tại.
+
+**Hiệu ứng cảnh 3D** có sáu lựa chọn, mặc định đều tắt, mỗi lựa chọn có thanh
+cường độ 0–100%. Chọn hiệu ứng để mở thanh chỉnh; icon sáng khi còn ít nhất
+một lựa chọn được tick. 0% không tạo hiệu ứng dù checkbox vẫn được chọn.
+Các mức dương chuyển tiếp theo thời gian để tránh giật khi kéo thanh; 0%
+tắt ngay. Sóng dùng thời gian tích lũy để không nhảy pha khi đổi cường độ.
+Mặt nước điều chỉnh độ rõ/tốc độ gợn sóng ở vùng World Terrain có mặt nạ nước,
+không mô phỏng chiều cao sóng thực. Chiếu sáng dùng đèn xiên theo hướng nhìn:
+sườn hướng về đèn sáng hơn, sườn khuất tối hơn, giúp đọc địa hình và không
+thay đổi cao độ. Sương pha màu theo độ sâu để chỉnh độ mờ ở xa, không cắt bớt
+ô địa hình; khí quyển chỉnh quầng sáng chân trời.
+Thanh chiếu sáng tăng tương phản giữa sườn sáng/tối, giữ độ phơi sáng ổn định
+để tránh ảnh trắng lóa ở mức cao. Sương rõ ở góc nhìn nghiêng gần địa hình;
+khí quyển rõ ở chân trời và góc nhìn toàn cầu, nước chỉ áp dụng tại vùng nước.
+Mưa/tuyết chỉ mô phỏng hạt quanh camera; cường độ đổi mật độ, kích thước và độ rõ, không lấy
+dữ liệu khí tượng hay tạo tuyết phủ tích lũy. Các hiệu ứng dùng trực tiếp cảnh
+Cesium, không thêm lớp bản đồ. Hạt được giải phóng khi tắt, về 2D hoặc ẩn tab.
+Hạt đi theo điểm nhìn khi pan/zoom; mật độ có giới hạn và điều chỉnh theo
+diện tích màn hình. Giảm cường độ cũng làm giảm độ rõ của các hạt đã sinh ra.
 
 - **Tra cứu vị trí:** bật icon tâm ngắm rồi click địa hình hoặc công trình.
   Một pin duy nhất di chuyển theo điểm click; tọa độ và cao độ nằm trên header.
@@ -310,7 +383,7 @@ công cụ báo lỗi thay vì gán cao độ 0. Đóng công cụ hoặc chuy�
 kết quả đang chờ tải.
 
 Kiểm thử tính toán địa hình, đồng bộ lớp và tải WMS: `npm test`
-tại thư mục `frontend`. Các test nằm trong `frontend/tests/unit/`.
+tại thư mục `frontend`. Các test nằm trong `temp/tests/frontend/unit/`.
 
 ## Tổ chức mã nguồn frontend
 
@@ -345,6 +418,11 @@ Các file vừa hợp nhất dùng `//#region` / `//#endregion` phân chia nhóm
 `cesiumTool.js` có vùng con cho từng nhóm điều khiển 3D. Thêm chức năng cùng nhóm
 vào vùng tương ứng, thay vì tạo module nhỏ chỉ để chuyển tiếp lời gọi.
 
+Panel hiệu ứng 3D dùng cùng bộ điều khiển trong `cesiumTool.js` (region 5.7).
+Cường độ 0% ngừng tác động; tắt công tắc giữ lại mức đã chọn. Nút “Tắt tất cả”
+dừng cả sáu hiệu ứng. Khi về 2D hoặc ẩn tab, hiệu ứng được ngừng và hạt thời tiết
+được giải phóng; khi quay lại 3D, các lựa chọn được khôi phục.
+
 ## Kiểm tra mã nguồn
 
 Tại thư mục gốc:
@@ -357,5 +435,83 @@ npm test
 npm run build
 ```
 
-`npm run build` tạo thư mục `frontend/dist`. Để xem thử bản build, chạy
+`npm run build` tạo thư mục `temp/frontend-dist`. Để xem thử bản build, chạy
 `npm run preview`; backend, GeoServer và PostGIS vẫn cần chạy riêng.
+
+### Tải DEM tạm cho phân tích địa hình
+
+Trong **Phân tích địa hình → Phân tích độ dốc → Tệp từ máy**, chọn GeoTIFF,
+xác nhận loại DEM/DSM/DTM, band và đơn vị cao độ rồi bấm **Tải lên và kiểm tra**.
+Nếu GeoTIFF thiếu CRS, nhập mã EPSG của dữ liệu. Không đọc toàn bộ raster trong
+trình duyệt; GDAL kiểm tra band và tính thống kê ở tiến trình riêng trên backend.
+
+- Tối đa **2 GiB/tệp**, tải từng khối **8 MiB**. Khi lỗi mạng, có thể tiếp tục
+  từ khối đã xác nhận trong cùng trang; nút Hủy dừng tải và hủy DEM tạm.
+- Dữ liệu nằm trong `temp/dem-uploads/` ở gốc dự án, cách ly theo phiên trình duyệt,
+  hết hiệu lực sau **24 giờ**, không tự xuất bản GeoServer hoặc thêm vào kho DEM.
+- Tệp hết hạn được dọn khi khởi tạo phiên tải mới. Có thể dọn chủ động bằng
+  `python manage.py cleanup_dem_uploads` từ thư mục `backend`.
+- Cấu hình `.env`: `DEM_GDAL_PYTHON` trỏ tới Python có GDAL; mặc định sử dụng
+  `C:/Program Files/QGIS 3.40.3/bin/python3.exe`. Runtime QGIS được cách ly với
+  Python của Django. Các giới hạn lưu trữ nằm trong `backend/backend/settings.py`.
+- Sau khi DEM sẵn sàng, có thể chọn toàn bộ DEM hoặc vẽ vùng phân tích trên
+  bản đồ, xem diện tích/số ô ước tính và chọn đơn vị độ dốc, rồi bấm **Phân tích
+  độ dốc**. Backend tính Horn 3×3, hỗ trợ độ và phần trăm, scale/offset của band
+  và cao độ mét/feet. DEM tọa độ địa lý hoặc lưới xoay được chuyển sang UTM.
+- Lựa chọn **Theo vùng có dữ liệu DEM** có hai bước: bấm **Xác định ranh giới
+  DEM** để quét pixel hợp lệ và xem đường bao, sau đó bấm **Phân tích độ dốc**.
+  Đường bao giữ các phần rời và lỗ NoData; không tự lấy ranh giới hành chính.
+  Backend cắt phần đệm trống ngoài vùng dữ liệu và dùng mask pixel chính xác.
+  GeoTIFF vẫn có khung chữ nhật; vùng ngoài đường bao và ô không đủ hàng xóm
+  được giữ NoData. Giới hạn số ô vẫn áp dụng cho khung xử lý có vùng đệm.
+- Kết quả gồm GeoTIFF Float32 đầy đủ độ phân giải, ảnh xem trước trên bản đồ 2D
+  và báo cáo TXT tiếng Việt theo 7 cấp (0–3–8–15–25–35–45–90°; quy đổi tương ứng khi dùng %).
+  Ảnh xem trước tối đa 1536 px, dùng lấy mẫu gần nhất; chỉ GeoTIFF là raster số
+  đầy đủ. Diện tích thống kê tính theo ô lưới hệ chiếu.
+- NoData, giá trị không hữu hạn và ô thiếu hàng xóm 3×3 bị loại. Có đọc thêm
+  vùng đệm 2 ô trước khi tính rồi mới áp mặt nạ vùng chọn để tránh tạo biên giả.
+  Chất lượng kết quả phụ thuộc DEM nguồn; thao tác này không lấp chỗ trống.
+- Tác vụ chạy nền bằng GDAL, có tiến trình/hủy; giới hạn mặc định 200 triệu ô,
+  30 phút/tác vụ, 2 tác vụ đồng thời trên máy chủ và 1 tác vụ/phiên. Có thể đặt
+  `SLOPE_MAX_CELLS` trong Django settings để thay giới hạn ô.
+- API `/mygis/slope-jobs/` nhận POST; `<uuid>/` nhận GET/DELETE; các đường dẫn
+  `geotiff/`, `preview/`, `report/` chỉ đọc được bởi phiên đã tạo tác vụ.
+  Kết quả lưu 24 giờ trong `temp/slope-jobs/`; dọn bằng lệnh
+  `python manage.py cleanup_dem_uploads` hoặc tự dọn khi tạo tác vụ mới.
+- Logic frontend nằm trong `frontend/src/tool/terrainAnalysisTool.js`. Backend
+  gom tải DEM, lưu trạng thái tạm, kiểm tra GeoTIFF, API, tính độ dốc và cả hai
+  worker vào `backend/mygis/slope_analysis.py` (không còn thư mục `mygis/dem/`).
+  Worker kiểm tra dùng `--validate-upload`, worker tính slope dùng `--worker`;
+  cả hai vẫn chạy trong Python GDAL riêng, không cần nạp Django. DEM GeoServer
+  hiện cần là kho GeoTIFF cục bộ mà backend đọc được, không nhận đường dẫn tùy ý
+  từ trình duyệt. Nếu lớp thiếu đơn vị cao độ, người dùng chọn mét/feet trước
+  khi tính.
+
+### Thư mục tạm dùng chung
+
+Các dữ liệu sinh ra khi chạy ứng dụng được gom trong `temp/`. Toàn bộ thư mục
+`/temp/` bị Git bỏ qua, kể cả các file test và file đánh dấu thư mục bên trong:
+
+| Thư mục | Nội dung |
+| --- | --- |
+| `temp/dem-uploads/` | GeoTIFF tải tạm và trạng thái phiên |
+| `temp/slope-jobs/` | Raster độ dốc, ảnh xem trước, thống kê và trạng thái tác vụ |
+| `temp/django-uploads/` | File tạm do Django nhận upload |
+| `temp/runtime/` | File tạm của Python/GDAL |
+| `temp/tests/frontend/unit/` | Các file kiểm thử frontend |
+| `temp/tests/backend/` | Các file kiểm thử backend |
+| `temp/tests/` | Dữ liệu sinh ra khi chạy kiểm thử |
+| `temp/python-cache/` | Bytecode/cache Python |
+| `temp/vite-cache/` | Cache frontend |
+| `temp/frontend-dist/` | Bản build frontend, có thể tạo lại |
+| `temp/backups/`, `temp/reports/`, `temp/logs/` | Nơi đặt bản sao tạm, báo cáo và log khi cần |
+| `temp/unused-assets/` | Tài nguyên cũ không còn được ứng dụng tham chiếu |
+
+Để dọn toàn bộ, dừng backend, frontend và các tác vụ xử lý trước rồi xóa nội dung
+trong `temp/` (giữ `.gitkeep` nếu có). Thao tác này cũng xóa các DEM tải tạm và
+bản build; cần tải lại DEM hoặc chạy build lại. Ứng dụng tự tạo lại các thư mục
+runtime cần thiết khi khởi động. Các file kiểm thử cũng được gom trong `temp/tests/`
+theo cách tổ chức hiện tại; xóa thư mục này sẽ xóa cả các test, nhưng không ảnh
+hưởng chức năng chạy ứng dụng. Lệnh test chỉ dùng được khi còn các file test.
+Chạy backend test từ thư mục `backend` bằng:
+`python manage.py test ../temp/tests/backend`.

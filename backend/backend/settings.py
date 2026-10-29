@@ -11,12 +11,23 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import sys
+import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = BASE_DIR.parent
+TEMP_ROOT = PROJECT_DIR / 'temp'
+for directory_name in ('runtime', 'django-uploads', 'tests'):
+    (TEMP_ROOT / directory_name).mkdir(parents=True, exist_ok=True)
+sys.pycache_prefix = str(TEMP_ROOT / 'python-cache')
+os.environ['PYTHONPYCACHEPREFIX'] = sys.pycache_prefix
+for variable_name in ('TMP', 'TEMP', 'TMPDIR'):
+    os.environ[variable_name] = str(TEMP_ROOT / 'runtime')
+tempfile.tempdir = str(TEMP_ROOT / 'runtime')
+FILE_UPLOAD_TEMP_DIR = str(TEMP_ROOT / 'django-uploads')
 load_dotenv(PROJECT_DIR / '.env', interpolate=False)
 
 
@@ -139,6 +150,13 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# Kho DEM tạm, không được phục vụ như file công khai.
+DEM_UPLOAD_ROOT = TEMP_ROOT / 'dem-uploads'
+DEM_UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024
+DEM_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
+DEM_UPLOAD_TTL_SECONDS = 24 * 60 * 60
+DEM_GDAL_PYTHON = os.getenv('DEM_GDAL_PYTHON', r'C:\Program Files\QGIS 3.40.3\bin\python3.exe')
 CORS_ALLOW_ALL_ORIGINS = env_bool('CORS_ALLOW_ALL_ORIGINS', True)
 CORS_ALLOW_CREDENTIALS = env_bool('CORS_ALLOW_CREDENTIALS', True)
 CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173')

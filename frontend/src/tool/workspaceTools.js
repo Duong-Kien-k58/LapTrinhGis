@@ -178,9 +178,16 @@ export function initWorkspaceTools({ map }) {
 //#endregion
 
 //#region 2. Hỗ trợ sử dụng và trạng thái dịch vụ
-function setServiceStatus(element, name, online, detail = '') {
-  element.className = `system-service ${online ? 'online' : 'offline'}`
-  element.textContent = `${name}: ${online ? 'Đang hoạt động' : 'Không kết nối được'}${detail ? ` (${detail})` : ''}`
+function setServiceStatus(element, name, online) {
+  const state = online === null ? 'pending' : online ? 'online' : 'offline'
+  element.className = `system-service ${state}`
+  const label = document.createElement('span')
+  label.className = 'system-service-name'
+  label.textContent = name
+  const status = document.createElement('span')
+  status.className = 'system-service-state'
+  status.textContent = online === null ? 'Đang kiểm tra…' : online ? 'Đã kết nối' : 'Mất kết nối'
+  element.replaceChildren(label, status)
 }
 
 export function createSystemTools() {
@@ -188,26 +195,31 @@ export function createSystemTools() {
     id: 'support-panel',
     title: 'Hỗ trợ sử dụng',
     content: `
-      <p class="tool-hint">Chọn công cụ trên thanh bên phải để thao tác với bản đồ.</p>
-      <ul class="system-list">
-        <li><strong>Mục lục lớp:</strong> bật/tắt và sắp xếp lớp dữ liệu.</li>
-        <li><strong>Đo đạc:</strong> đo chiều dài hoặc diện tích trực tiếp trên bản đồ.</li>
-        <li><strong>Tìm kiếm:</strong> nhập địa danh hoặc tọa độ WGS84/VN-2000.</li>
-        <li><strong>Tra cứu:</strong> chọn lớp rồi nhấp bản đồ để xem thuộc tính hoặc pixel raster.</li>
-      </ul>
-      <strong>Trạng thái dịch vụ</strong>
-      <div class="system-services" data-support-services>Đang kiểm tra…</div>
-      <button type="button" class="secondary" data-refresh-support>Làm mới trạng thái</button>
+      <section class="support-connections" aria-label="Kết nối dịch vụ">
+        <div class="support-connections-heading">
+          <strong>Kết nối dịch vụ</strong>
+          <button type="button" data-refresh-support aria-label="Kiểm tra lại kết nối" title="Kiểm tra lại kết nối">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1a8 8 0 0 1 13.1 3M4.8 14.9a8 8 0 0 0 13.1 3"/></svg>
+          </button>
+        </div>
+        <div class="system-services" data-support-services role="status" aria-live="polite" aria-atomic="true"></div>
+      </section>
     `,
   })
   supportPanel.dataset.sectionAction = 'support'
+  const refreshButton = supportPanel.querySelector('[data-refresh-support]')
+  let checkingServices = false
 
   async function checkServices(container) {
+    if (checkingServices) return
+    checkingServices = true
+    refreshButton.disabled = true
+    refreshButton.setAttribute('aria-busy', 'true')
     const backend = document.createElement('div')
     const geoserver = document.createElement('div')
     container.replaceChildren(backend, geoserver)
-    setServiceStatus(backend, 'Backend', false, 'đang kiểm tra')
-    setServiceStatus(geoserver, 'GeoServer', false, 'đang kiểm tra')
+    setServiceStatus(backend, 'Backend', null)
+    setServiceStatus(geoserver, 'GeoServer', null)
 
     const [backendResult, geoserverResult] = await Promise.allSettled([
       requestJson('/mygis/health/').then(data => data.success !== false),
@@ -215,6 +227,9 @@ export function createSystemTools() {
     ])
     setServiceStatus(backend, 'Backend', backendResult.status === 'fulfilled' && backendResult.value)
     setServiceStatus(geoserver, 'GeoServer', geoserverResult.status === 'fulfilled' && geoserverResult.value)
+    checkingServices = false
+    refreshButton.disabled = false
+    refreshButton.removeAttribute('aria-busy')
   }
 
   function closeAll(except = '') {

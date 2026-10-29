@@ -1,12 +1,13 @@
-import { GEOSERVER_CONFIG, MAP_LAYER_CONFIGS } from '../config/layers.js'
+import { GEOSERVER_CONFIG, MAP_LAYER_CONFIGS, rasterPresentationGroup } from '../config/layers.js'
 import { createToolPanel } from './toolUtils.js'
 
 const STORAGE_KEY = 'webgis-layer-presentation-v1'
 const COLOR_MAPPED_RASTER_TYPES = new Set(['dem', 'thematic'])
 const DEFAULT_RASTER_RANGE = { min: 0, max: 3000 }
 const DEFAULT_RASTER_STEPS = 15
+const DEFAULT_DEM_STEPS = 32
 const MIN_RASTER_STEPS = 5
-const MAX_RASTER_STEPS = 30
+const MAX_RASTER_STEPS = 64
 const PALETTES = {
   terrain: ['#006837', '#1a9850', '#66bd63', '#a6d96a', '#d9ef8b', '#ffffbf', '#fee08b', '#fdae61', '#f46d43', '#d73027', '#8c1d18', '#f5f5f5'],
   elevation: ['#0b3d2e', '#146b3a', '#2f8f46', '#62ad55', '#9fcf6b', '#d8e68a', '#f2e6a2', '#d6b46c', '#ad7d4f', '#805238', '#57382e', '#d9d9d9', '#ffffff'],
@@ -213,7 +214,7 @@ async function validateSld(layer, sld) {
   }
 }
 
-export function createLayerStyleTool({ thematicGroups, rasterGroup }) {
+export function createLayerStyleTool({ thematicGroups, rasterGroup, rasterGroups = [rasterGroup] }) {
   const panel = createToolPanel({
     id: 'layer-style-panel',
     title: 'Trình bày lớp dữ liệu',
@@ -240,17 +241,17 @@ export function createLayerStyleTool({ thematicGroups, rasterGroup }) {
   let applyVersion = 0
 
   function allVectorLayers() {
-    return [...thematicGroups, rasterGroup].flatMap(group => group.getLayers().getArray()).filter(layer => configs.has(layer.get('configId')))
+    return [...thematicGroups, ...rasterGroups].flatMap(group => group.getLayers().getArray()).filter(layer => configs.has(layer.get('configId')))
   }
 
   function rasterType(layer) {
     const metadata = layer.get('rasterMetadata') || {}
-    return metadata.presentation_type || 'thematic'
+    return rasterPresentationGroup(metadata.presentation_type)
   }
 
   function availableLayers(definition) {
     if (definition.kind === 'raster') {
-      return [...thematicGroups, rasterGroup].flatMap(group => group.getLayers().getArray()).filter((layer) => layer.get('rasterName') && rasterType(layer) === definition.rasterType)
+      return [...thematicGroups, ...rasterGroups].flatMap(group => group.getLayers().getArray()).filter((layer) => layer.get('rasterName') && rasterType(layer) === definition.rasterType)
     }
     return allVectorLayers().filter((layer) => {
       const config = configs.get(layer.get('configId'))
@@ -315,8 +316,8 @@ export function createLayerStyleTool({ thematicGroups, rasterGroup }) {
       const rasterStyleFields = hasColorMap ? `
         <label>Giá trị nhỏ nhất<input data-min type="number" value="${range.min}"></label>
         <label>Giá trị lớn nhất<input data-max type="number" value="${range.max}"></label>
-        <label>Số khoảng màu<input data-steps type="number" min="${MIN_RASTER_STEPS}" max="${MAX_RASTER_STEPS}" value="${DEFAULT_RASTER_STEPS}"></label>
-        <label>Bảng màu<select data-palette><option value="terrain">Địa hình</option><option value="elevation">Cao độ tự nhiên</option><option value="spectral">Phổ màu</option><option value="viridis">Viridis</option><option value="earth">Màu đất</option><option value="blue">Xanh lam</option><option value="warm">Màu nóng</option></select></label>` : `
+        <label>Số khoảng màu<input data-steps type="number" min="${MIN_RASTER_STEPS}" max="${MAX_RASTER_STEPS}" value="${currentDefinition.rasterType === 'dem' ? DEFAULT_DEM_STEPS : DEFAULT_RASTER_STEPS}"></label>
+        <label>Bảng màu<select data-palette><option value="terrain">Địa hình</option><option value="elevation" ${currentDefinition.rasterType === 'dem' ? 'selected' : ''}>Cao độ tự nhiên</option><option value="spectral">Phổ màu</option><option value="viridis">Viridis</option><option value="earth">Màu đất</option><option value="blue">Xanh lam</option><option value="warm">Màu nóng</option></select></label>` : `
         <label>Gamma<input data-gamma type="range" min="0.2" max="3" step="0.1" value="1"></label>
         <label class="tool-option"><input data-normalize type="checkbox"> Chuẩn hóa tương phản</label>`
       controls.innerHTML = `
@@ -520,7 +521,7 @@ export function createLayerStyleTool({ thematicGroups, rasterGroup }) {
         styles[getLayerName(layer)] = appliedState
         if (!writeSavedStyles(styles)) throw new Error('Đã áp dụng style nhưng trình duyệt không cho phép lưu cấu hình.')
       }
-      const parent = [...thematicGroups, rasterGroup].find(group => group.getLayers().getArray().includes(layer))
+      const parent = [...thematicGroups, ...rasterGroups].find(group => group.getLayers().getArray().includes(layer))
       const hiddenHint = !layer.getVisible() || !parent?.getVisible() ? ' Lớp đang tắt; bật trong mục lục để xem.' : ''
       setStatus((save ? 'Đã lưu và áp dụng style trên trình duyệt này.' : 'Đã áp dụng style cho phiên làm việc hiện tại.') + hiddenHint)
     } catch (error) {
@@ -634,7 +635,7 @@ export function createLayerStyleTool({ thematicGroups, rasterGroup }) {
   }
 
   function forget(layerName) {
-    const layer = [...thematicGroups, rasterGroup].flatMap(group => group.getLayers().getArray()).find((item) => item.get('rasterName') === layerName)
+    const layer = [...thematicGroups, ...rasterGroups].flatMap(group => group.getLayers().getArray()).find((item) => item.get('rasterName') === layerName)
     if (layer) restoreLayer(layer)
     else {
       sessionStyles.delete(layerName); sessionStyles.delete(`${GEOSERVER_CONFIG.workspace}:${layerName}`)
@@ -661,8 +662,10 @@ export function createLayerStyleTool({ thematicGroups, rasterGroup }) {
   panel.addEventListener('toolpanelclose', close)
 
   allVectorLayers().forEach(layer => { prepareDefaultLabels(layer); applyStoredStyle(layer) })
-  rasterGroup.getLayers().forEach(applyStoredStyle)
-  rasterGroup.getLayers().on('add', (event) => applyStoredStyle(event.element))
+  rasterGroups.forEach(group => {
+    group.getLayers().forEach(applyStoredStyle)
+    group.getLayers().on('add', (event) => applyStoredStyle(event.element))
+  })
 
   return { open, close, forget, supports: (sectionName) => Boolean(SECTION_CONFIG[sectionName]) }
 }

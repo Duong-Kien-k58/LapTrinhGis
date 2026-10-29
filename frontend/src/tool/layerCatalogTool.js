@@ -1,12 +1,51 @@
 import WMSCapabilities from 'ol/format/WMSCapabilities.js';
 import { get as getProjection, transformExtent } from 'ol/proj.js';
 import { extend, createEmpty } from 'ol/extent.js';
+import { RASTER_LAYER_CONFIGS } from '../config/layers.js';
 
 const STORAGE_KEY = 'webgis_layer_catalog_v1';
+
+export function selectCatalogLayers({ orderedLayers, selected, anchor, layer, toggle = false, range = false }) {
+  if (range && orderedLayers.includes(anchor) && orderedLayers.includes(layer)) {
+    const start = orderedLayers.indexOf(anchor);
+    const end = orderedLayers.indexOf(layer);
+    const next = new Set(toggle ? selected : []);
+    orderedLayers.slice(Math.min(start, end), Math.max(start, end) + 1).forEach(item => next.add(item));
+    return { selected: next, anchor };
+  }
+  const next = new Set(toggle ? selected : []);
+  if (toggle && next.has(layer)) next.delete(layer);
+  else next.add(layer);
+  return { selected: next, anchor: layer };
+}
+
+export function migrateDemCatalogState(state) {
+  // Chỉ chuyển bố cục cũ; giữ các thao tác kéo thả đã lưu sau khi có nhóm DEM.
+  if (state.groups && !state.groups.dem && Array.isArray(state.groups.raster)) {
+    const demIds = new Set(RASTER_LAYER_CONFIGS.filter(config => config.group === 'dem').map(config => config.id));
+    state.groups.dem = state.groups.raster.filter(id => demIds.has(id));
+    state.groups.raster = state.groups.raster.filter(id => !demIds.has(id));
+  }
+  if (Array.isArray(state.groupOrder) && !state.groupOrder.includes('dem')) {
+    const index = state.groupOrder.indexOf('raster');
+    state.groupOrder.splice(index < 0 ? state.groupOrder.length : index, 0, 'dem');
+  }
+  return state;
+}
 
 function getSavedState() {
   try {
     const state = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (state && typeof state === 'object' && !Array.isArray(state)) {
+      // Giữ vị trí và visibility đã lưu khi lớp UB cũ được thay bằng tthc.
+      Object.values(state.groups || {}).forEach(order => {
+        if (Array.isArray(order)) order.forEach((id, index) => { if (id === 'ub_tinh') order[index] = 'tthc'; });
+      });
+      const layers = state.visibility?.layers;
+      if (layers && layers.tthc === undefined && layers.ub_tinh !== undefined) layers.tthc = layers.ub_tinh;
+      if (layers) delete layers.ub_tinh;
+      migrateDemCatalogState(state);
+    }
     return state && typeof state === 'object' && !Array.isArray(state) ? state : {};
   } catch {
     return {};
@@ -36,6 +75,7 @@ export function createLayerCatalogTool({
   baseGroup,
   thematicGroups,
   rasterGroup,
+  rasterGroups = [rasterGroup],
   wfsGroup,
   layerConfigs,
   rasterLayerMap
@@ -43,7 +83,7 @@ export function createLayerCatalogTool({
   const wrapper = document.querySelector('.map-wrapper');
   if (!wrapper) throw new Error('Không tìm thấy vùng chứa bản đồ');
 
-  const groups = [...thematicGroups, rasterGroup]; // Các nhóm được phép kéo
+  const groups = [...thematicGroups, ...rasterGroups]; // Các nhóm được phép kéo
   const groupById = new Map(groups.map(group => [group.get('tocGroupId'), group]));
   const configById = new Map(layerConfigs.map(config => [config.id, config]));
   const allGroups = [...groups, baseGroup].filter(Boolean);
@@ -59,11 +99,12 @@ export function createLayerCatalogTool({
   const defaultGroupVisibility = new Map(allGroups.map(group => [group, group.getVisible()]));
   const defaultLayerVisibility = new Map();
   const defaultGroupByLayer = new Map();
+  const restoredLayers = new Set();
 
   function rememberLayer(layer, group) {
     if (defaultGroupByLayer.has(layer)) return;
-    // Raster mới luôn trở về nhóm raster khi chọn Khôi phục.
-    const home = layer.get('layerKind') === 'raster' || layer.get('rasterName') ? rasterGroup : group;
+    // Ghi nhớ đúng nhóm ban đầu, gồm cả DEM và ảnh vệ tinh.
+    const home = group;
     defaultGroupByLayer.set(layer, home);
     defaultLayerVisibility.set(layer, layer.getVisible());
     const defaults = defaultLayerOrders.get(home);
@@ -95,6 +136,9 @@ export function createLayerCatalogTool({
   }
 
   let selectedLayer = null;
+  let selectedLayers = new Set();
+  let selectionAnchor = null;
+  const rowLayers = new Map();
   let zoomRequest = 0;
   const capabilitiesCache = new Map();
   let dragged = null; // Đối tượng đang được kéo
@@ -138,6 +182,95 @@ export function createLayerCatalogTool({
   const saveButton = panel.querySelector('.layer-catalog-save');
   const resetButton = panel.querySelector('.layer-catalog-reset');
   const zoomStatus = panel.querySelector('.toc-zoom-status');
+  const selectionStatus = document.createElement('span');
+  selectionStatus.className = 'toc-selection-status';
+  selectionStatus.setAttribute('role', 'status');
+  selectionStatus.setAttribute('aria-live', 'polite');
+  panel.querySelector('.layer-catalog-toolbar > span').replaceWith(selectionStatus);
+  const contextMenu = document.createElement('div');
+  contextMenu.className = 'toc-context-menu';
+  contextMenu.hidden = true;
+  contextMenu.setAttribute('role', 'menu');
+  contextMenu.setAttribute('aria-label', 'Bật hoặc tắt các lớp đã chọn');
+  contextMenu.innerHTML = '<span class="toc-context-count"></span><button type="button" role="menuitem" data-set-visible="true">Turn on <span>Bật lớp</span></button><button type="button" role="menuitem" data-set-visible="false">Turn off <span>Tắt lớp</span></button>';
+  panel.append(contextMenu);
+  let contextLayer = null;
+
+  function closeContextMenu(restoreFocus = false) {
+    contextMenu.hidden = true;
+    if (restoreFocus) {
+      const row = [...rowLayers].find(([, item]) => item.layer === contextLayer)?.[0];
+      row?.focus();
+    }
+  }
+
+  function updateSelection() {
+    rowLayers.forEach(({ layer }, row) => {
+      row.classList.toggle('selected', selectedLayers.has(layer));
+      row.setAttribute('aria-label', `${layer.get('title') || getLayerId(layer)}${selectedLayers.has(layer) ? ', đã chọn' : ''}`);
+    });
+    selectionStatus.textContent = selectedLayers.size ? `Đã chọn ${selectedLayers.size} lớp · Chuột phải để bật/tắt` : '';
+  }
+
+  function selectRow(layer, event) {
+    closeContextMenu();
+    const orderedLayers = [...rowLayers].filter(([row]) => !row.closest('[hidden]')).map(([, item]) => item.layer);
+    const result = selectCatalogLayers({ orderedLayers, selected: selectedLayers, anchor: selectionAnchor, layer,
+      toggle: event.ctrlKey || event.metaKey, range: event.shiftKey });
+    selectedLayers = result.selected;
+    selectionAnchor = result.anchor;
+    selectedLayer = layer;
+    updateSelection();
+  }
+
+  function openContextMenu(layer, x, y) {
+    if (!selectedLayers.has(layer)) selectRow(layer, {});
+    contextLayer = layer;
+    contextMenu.querySelector('.toc-context-count').textContent = `${selectedLayers.size} lớp đã chọn`;
+    contextMenu.hidden = false;
+    const box = panel.getBoundingClientRect();
+    contextMenu.style.left = `${Math.max(6, Math.min(x - box.left, panel.clientWidth - contextMenu.offsetWidth - 6))}px`;
+    contextMenu.style.top = `${Math.max(6, Math.min(y - box.top, panel.clientHeight - contextMenu.offsetHeight - 6))}px`;
+    contextMenu.querySelector('button').focus();
+  }
+
+  contextMenu.querySelectorAll('[data-set-visible]').forEach(item => {
+    item.addEventListener('click', () => {
+      const visible = item.dataset.setVisible === 'true';
+      const selectedBases = baseGroup.getLayers().getArray().filter(layer => selectedLayers.has(layer));
+      [...groups, baseGroup].forEach(group => {
+        group.getLayers().forEach(layer => {
+          if (!selectedLayers.has(layer)) return;
+          if (!isBaseLayer(layer) || !visible) layer.setVisible(visible);
+          if (visible) group.setVisible(true);
+        });
+      });
+      // Bản đồ nền là lựa chọn loại trừ nhau, chỉ bật một nền khi chọn nhiều.
+      if (visible && selectedBases.length) baseGroup.getLayers().forEach(layer => layer.setVisible(layer === selectedBases.at(-1)));
+      closeContextMenu();
+      render();
+      closeContextMenu(true);
+    });
+  });
+  contextMenu.addEventListener('keydown', event => {
+    const items = [...contextMenu.querySelectorAll('button')];
+    if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+      event.preventDefault();
+      items[(items.indexOf(document.activeElement) + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+    }
+    if (event.key === 'Tab') closeContextMenu(true);
+  });
+  document.addEventListener('pointerdown', event => {
+    if (!contextMenu.contains(event.target)) closeContextMenu();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !contextMenu.hidden) {
+      event.preventDefault();
+      closeContextMenu(true);
+    }
+  });
+  content.addEventListener('scroll', () => closeContextMenu());
+  window.addEventListener('resize', () => closeContextMenu());
 
   function validExtent(extent) {
     return Array.isArray(extent) && extent.length === 4 && extent.every(Number.isFinite)
@@ -210,6 +343,8 @@ export function createLayerCatalogTool({
       else layer.setVisible(true);
       group.setVisible(true);
       selectedLayer = layer;
+      selectedLayers = new Set([layer]);
+      selectionAnchor = layer;
       const width = map.getSize()?.[0] || 0;
       const panelWidth = panel.getBoundingClientRect().width;
       const compact = width < panelWidth + 200;
@@ -259,6 +394,17 @@ export function createLayerCatalogTool({
     setSavedState(state);
   }
 
+  // Các hộp cấu hình cũng sửa visibility: chỉ cập nhật phần được lưu ở đó,
+  // không vô tình lưu các thay đổi thứ tự/nhóm còn đang chỉnh trong mục lục.
+  function saveVisibility({ groups: groupChanges = {}, layers: layerChanges = {} }) {
+    const state = getSavedState();
+    state.visibility = {
+      groups: { ...state.visibility?.groups, ...groupChanges },
+      layers: { ...state.visibility?.layers, ...layerChanges }
+    };
+    setSavedState(state);
+  }
+
   function applyState() {
     const state = getSavedState();
     const orderedGroups = [];
@@ -303,12 +449,12 @@ export function createLayerCatalogTool({
       group.getLayers().forEach(layer => {
         const visible = state.visibility?.layers?.[getLayerId(layer)];
         if (typeof visible === 'boolean') layer.setVisible(visible);
+        restoredLayers.add(layer);
       });
     });
   }
 
   function resetCatalog() {
-    localStorage.removeItem(STORAGE_KEY);
     const fixedLayers = map.getLayers().getArray().filter(layer => !groups.includes(layer));
     map.getLayers().clear();
     map.getLayers().extend([...fixedLayers, ...defaultGroupOrder.slice().reverse()]);
@@ -342,6 +488,31 @@ export function createLayerCatalogTool({
       ...currentBase.filter(layer => !defaultLayerOrders.get(baseGroup)?.includes(layer))
     ]);
     if (selectedLayer && !currentLayers.has(selectedLayer) && !currentBase.includes(selectedLayer)) selectedLayer = null;
+    saveState();
+    render();
+  }
+
+  function restoreAddedLayers() {
+    const state = getSavedState();
+    for (const layer of liveMovableLayers().filter(layer => !restoredLayers.has(layer))) {
+      const id = getLayerId(layer);
+      const target = groups.find(group => {
+        const order = state.groups?.[group.get('tocGroupId')];
+        return Array.isArray(order) && order.includes(id);
+      });
+      if (target) {
+        const savedOrder = state.groups[target.get('tocGroupId')];
+        const order = getUiOrder(target.getLayers()).filter(item => item !== layer);
+        const index = order.findIndex(item => savedOrder.indexOf(getLayerId(item)) > savedOrder.indexOf(id));
+        groups.forEach(group => group.getLayers().remove(layer));
+        order.splice(index < 0 ? order.length : index, 0, layer);
+        moveCollectionToUiOrder(target.getLayers(), order);
+        setLayerGroup(layer, target);
+      }
+      const visible = state.visibility?.layers?.[id];
+      if (typeof visible === 'boolean') layer.setVisible(visible);
+      restoredLayers.add(layer);
+    }
     render();
   }
 
@@ -359,8 +530,10 @@ export function createLayerCatalogTool({
     row.className = 'toc-layer-row';
     row.dataset.layerId = layerId;
     row.draggable = canDrag;
+    row.tabIndex = 0;
+    rowLayers.set(row, { layer, group });
 
-    if (layer === selectedLayer) row.classList.add('selected');
+    if (selectedLayers.has(layer)) row.classList.add('selected');
 
     const checkbox = document.createElement('input');
     checkbox.type = isBaseLayer(layer) ? 'radio' : 'checkbox';
@@ -395,9 +568,26 @@ export function createLayerCatalogTool({
     row.append(eye);
 
     row.addEventListener('click', function (event) {
-      if (event.target === checkbox) return;
-      selectedLayer = layer;
-      render();
+      if (event.target.closest('input, button')) return;
+      row.focus();
+      selectRow(layer, event);
+    });
+    row.addEventListener('contextmenu', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      openContextMenu(layer, event.clientX, event.clientY);
+    });
+    row.addEventListener('keydown', event => {
+      if (event.target !== row) return;
+      if (event.key === ' ' || event.key === 'Enter') {
+        event.preventDefault();
+        selectRow(layer, event);
+      }
+      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+        event.preventDefault();
+        const box = row.getBoundingClientRect();
+        openContextMenu(layer, box.left + 20, box.bottom);
+      }
     });
 
     if (canDrag) {
@@ -602,6 +792,10 @@ export function createLayerCatalogTool({
   }
 
   function render() {
+    closeContextMenu();
+    rowLayers.clear();
+    const liveLayers = new Set([...liveMovableLayers(), ...baseGroup.getLayers().getArray()]);
+    selectedLayers.forEach(layer => { if (!liveLayers.has(layer)) selectedLayers.delete(layer); });
     content.replaceChildren();
 
     getUiOrder(map.getLayers())
@@ -611,9 +805,11 @@ export function createLayerCatalogTool({
       });
 
     content.append(createGroupNode(baseGroup, { draggable: false, acceptLayers: false }));
+    updateSelection();
   }
 
   function closePanel() {
+    closeContextMenu();
     panel.classList.remove('shown');
   }
 
@@ -631,23 +827,38 @@ export function createLayerCatalogTool({
   }, true);
 
   saveButton.onclick = function () {
-    saveState();
-    saveButton.textContent = 'Đã lưu';
-    setTimeout(function () {
+    try {
+      saveState();
+      zoomStatus.hidden = false;
+      zoomStatus.textContent = 'Đã lưu mục lục bản đồ trên trình duyệt này.';
+      saveButton.textContent = 'Đã lưu';
+      setTimeout(function () {
+        saveButton.textContent = 'Lưu';
+      }, 1400);
+    } catch {
       saveButton.textContent = 'Lưu';
-    }, 1400);
+      zoomStatus.hidden = false;
+      zoomStatus.textContent = 'Không thể lưu mục lục. Hãy kiểm tra quyền lưu dữ liệu của trình duyệt và thử lại.';
+    }
   };
 
   resetButton.onclick = function () {
-    resetCatalog();
+    try {
+      resetCatalog();
+      zoomStatus.hidden = false;
+      zoomStatus.textContent = 'Đã khôi phục mục lục mặc định.';
+    } catch {
+      zoomStatus.hidden = false;
+      zoomStatus.textContent = 'Đã khôi phục giao diện nhưng trình duyệt không cho phép lưu. Hãy kiểm tra quyền lưu dữ liệu.';
+      render();
+    }
   };
 
   applyState(); // Khôi phục thứ tự
   render(); // Hiển thị TOC
 
   return {
-    render, getLayerExtent,
-    // Áp dụng lại cả placement cho raster động được tải sau lần khởi tạo catalog.
+    render, getLayerExtent, saveVisibility, restoreAddedLayers,
     restoreVisibility() { applyState(); render(); }
   };
 }

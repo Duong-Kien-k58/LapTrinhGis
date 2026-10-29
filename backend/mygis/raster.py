@@ -13,7 +13,7 @@ from django.db import DatabaseError  # Bắt lỗi PostgreSQL
 from django.conf import settings
 from dotenv import dotenv_values
 from django.views.decorators.csrf import csrf_protect
-from .raster_api import error, success  # Chuẩn hóa response thành công/lỗi
+from .responses import error, success  # Chuẩn hóa response thành công/lỗi
 from .models import RasterMetadata  # Model lưu metadata raster trong PostgreSQL
 logger = logging.getLogger(__name__)  # Logger của file hiện tại
 RASTER_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{0,62}$")  # Tên raster phải bắt đầu bằng chữ, tối đa 63 ký tự
@@ -185,6 +185,13 @@ def coverage_metadata(workspace, store_name, coverage_name):
     # GeoServer trả về dạng UNSIGNED_8BITS hoặc REAL_32BITS.
     bits = sorted({match.group(1) for item in data_types if (match := re.search(r"(\d+)_?BITS", item))})
     no_data = [item.get("nullValues", {}).get("double") for item in dimensions]
+    value_range = dimensions[0].get("range", {}) if len(dimensions) == 1 else {}
+    def finite_value(key):
+        try:
+            value = float(value_range[key])
+            return value if math.isfinite(value) else None
+        except (KeyError, TypeError, ValueError):
+            return None
     grid = coverage.get("grid", {})
     source_type = coverage.get("nativeFormat", "GeoServer")
     return {
@@ -201,6 +208,8 @@ def coverage_metadata(workspace, store_name, coverage_name):
             "bits_per_sample": f"{', '.join(bits)} bit × {len(dimensions)} band" if bits and dimensions else None,
             "data_type": ", ".join(sorted(set(data_types))) or None,
             "no_data": no_data if any(value is not None for value in no_data) else None,
+            "value_min": finite_value("min"),
+            "value_max": finite_value("max"),
             "resolution_x": abs(grid.get("transform", {}).get("scaleX", 0)) or None,
             "resolution_y": abs(grid.get("transform", {}).get("scaleY", 0)) or None,
         },
@@ -218,12 +227,21 @@ def sync_raster_from_geoserver(request, raster_name):
         return error(name_error)
     workspace = geoserver_setting("GEOSERVER_WORKSPACE", "webgis")
     try:
-        current_type = RasterMetadata.objects.filter(name=raster_name).values_list("presentation_type", flat=True).first()
+        current_raster = RasterMetadata.objects.filter(name=raster_name).first()
+        current_type = current_raster.presentation_type if current_raster else None
         presentation_type = request.POST.get("presentation_type", current_type or RasterMetadata.PresentationType.THEMATIC).strip()
         if presentation_error := validate_presentation_type(presentation_type):
             return error(presentation_error)
         store_name = raster_store(workspace, raster_name) or store_name
         metadata = coverage_metadata(workspace, store_name, raster_name)
+        if current_raster:
+            # Giữ thống kê đầy đủ và báo cáo chất lượng khi đồng bộ lại GeoServer.
+            metadata["technical_metadata"] = {
+                **current_raster.technical_metadata,
+                **{key: value for key, value in metadata["technical_metadata"].items() if value is not None},
+            }
+            if current_raster.source_filename:
+                metadata["source_filename"] = current_raster.source_filename
         raster, _ = RasterMetadata.objects.update_or_create(
             name=raster_name,
             defaults={

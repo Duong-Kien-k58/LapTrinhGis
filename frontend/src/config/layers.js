@@ -24,13 +24,16 @@ export const LAYER_GROUP_CONFIGS = [
   { id: 'administrative', title: 'Địa giới hành chính', fold: 'close' },
   { id: 'terrain', title: 'Địa hình', fold: 'close' },
   { id: 'land_cover', title: 'Phủ bề mặt', fold: 'close' },
-  { id: 'raster', title: 'Dữ liệu Raster', fold: 'close', kind: 'raster' },
+  { id: 'dem', title: 'DEM', fold: 'close', kind: 'raster' },
+  { id: 'raster', title: 'Ảnh vệ tinh', fold: 'close', kind: 'raster' },
   { id: 'base', title: 'Bản đồ nền địa lý', fold: 'close', kind: 'base' }
 ];
 
 // =========================================================
 // 3. BẢN ĐỒ NỀN
 // =========================================================
+export const STARTUP_3D_VIEW = { center: [105, 16], distance: 4450000, tilt: 40 };
+
 export const BASE_LAYER_CONFIGS = [
   //#region: Nhóm bản đồ nền
   //Osm
@@ -52,10 +55,10 @@ export const BASE_LAYER_CONFIGS = [
     visible: false,
     url: 'https://{a-c}.tile.opentopomap.org/{z}/{x}/{y}.png'
   },
-  //Satellite
+  //Google Satellite: ảnh vệ tinh thuần.
   {
     id: 'satellite',
-    title: 'Vệ tinh',
+    title: 'Vệ tinh (Satellite)',
     group: 'base',
     type: 'base',
     sourceType: 'XYZ',
@@ -72,6 +75,20 @@ export const BASE_LAYER_CONFIGS = [
 // =========================================================
 // Thứ tự khai báo layer trong cùng một `group` là thứ tự hiển thị từ TRÊN xuống DƯỚI.
 export const MAP_LAYER_CONFIGS = [
+  {
+    id: 'ranhgioi',
+    title: 'Ranh giới quốc gia, tỉnh, xã',
+    group: 'survey',
+    geometryType: 'MultiLineString',
+    visible: true,
+    selectable: false,
+    searchable: false,
+    editable: false,
+    attributeTable: false,
+    hasPopup: false,
+    zIndex: 90,
+    style: { type: 'line', stroke: '#ffffff', width: 1.5 }
+  },
   //#region: Nhóm bản đồ nền
   //Nền biển
   {
@@ -79,7 +96,7 @@ export const MAP_LAYER_CONFIGS = [
     title: 'Nền biển',
     group: 'background',
     geometryType: 'Polygon',
-    visible: true,
+    visible: false,
     selectable: true,
     searchable: true,
     editable: true,
@@ -142,20 +159,33 @@ export const MAP_LAYER_CONFIGS = [
     title: 'Nước ngoài',
     group: 'background',
     geometryType: 'Polygon',
-    visible: true,
+    visible: false,
     selectable: true,
     searchable: true,
     editable: true,
     attributeTable: true,
     hasPopup: true,
     searchIcon: '≈',
-    searchFields: ['ten'],
+    searchFields: ['ten', 'name_en', 'adm0_a3', 'iso_a2', 'iso_a3', 'continent'],
     editFields: [
-      { name: 'ten', label: 'Tên nước ngoài' }
+      { name: 'ten', label: 'Tên quốc gia' },
+      { name: 'name_en', label: 'Tên tiếng Anh' },
+      { name: 'adm0_a3', label: 'Mã quốc gia (nguồn)' },
+      { name: 'iso_a2', label: 'Mã ISO alpha-2' },
+      { name: 'iso_a3', label: 'Mã ISO alpha-3' },
+      { name: 'type', label: 'Loại đơn vị' },
+      { name: 'continent', label: 'Châu lục' },
+      { name: 'label_x', label: 'Kinh độ đặt nhãn' },
+      { name: 'label_y', label: 'Vĩ độ đặt nhãn' }
     ],
     popupHeader: 'Thông tin nước ngoài',
     popupFields: [
-      { label: 'Tên nước ngoài', fields: ['ten', 'id'] }
+      { label: 'Tên quốc gia', fields: ['ten'] },
+      { label: 'Tên tiếng Anh', fields: ['name_en'] },
+      { label: 'Mã quốc gia', fields: ['adm0_a3'] },
+      { label: 'Mã ISO', fields: ['iso_a3'] },
+      { label: 'Châu lục', fields: ['continent'] },
+      { label: 'Loại đơn vị', fields: ['type'] }
     ],
     style: {
       type: 'polygon',
@@ -167,33 +197,36 @@ export const MAP_LAYER_CONFIGS = [
   //#endregion
   
   //#region: Nhóm hành chính
-  //UB tỉnh
+  //Trung tâm hành chính tỉnh: điểm trung tâm đô thị tham khảo theo nguồn nhập.
   {
-    id: 'ub_tinh',
-    title: 'UB Tỉnh',
+    id: 'tthc',
+    zIndex: 100,
+    title: 'Trung tâm hành chính tỉnh',
     group: 'administrative',
     geometryType: 'Point',
-    visible: true,
+    visible: false,
     selectable: true,
     searchable: true,
     editable: true,
     attributeTable: true,
     hasPopup: true,
-    selectName: 'Ủy ban',
-    searchTitle: 'UBND',
+    selectName: 'Trung tâm hành chính',
+    searchTitle: 'Trung tâm hành chính tỉnh',
     searchIcon: '●',
-    searchFields: ['ten', 'tinh', 'ten_tinh', 'TenTinhT', 'name', 'caphc'],
+    searchFields: ['tentinh', 'tinhly', 'nguontd', 'loaidiem'],
     editFields: [
-      { name: 'ten', label: 'Tên UB' },
-      { name: 'caphc', label: 'Cấp hành chính' },
-      { name: 'tinh', label: 'Tỉnh' }
+      { name: 'tentinh', label: 'Tên tỉnh' },
+      { name: 'tinhly', label: 'Tỉnh lỵ' },
+      { name: 'nguontd', label: 'Nguồn tọa độ' },
+      { name: 'loaidiem', label: 'Loại điểm' }
     ],
-    popupHeader: 'Thông tin UB tỉnh',
+    popupHeader: 'Trung tâm hành chính tỉnh — điểm tham khảo',
     popupFields: [
-      { label: 'Tên UB', fields: ['ten', 'name'] },
-      { label: 'Tỉnh', fields: ['tinh', 'ten_tinh', 'TenTinhT'] },
-      { label: 'Cấp HC', fields: ['caphc'] },
-      { label: 'GID', fields: ['gid', 'id'] }
+      { label: 'Tên tỉnh', fields: ['tentinh'] },
+      { label: 'Tỉnh lỵ', fields: ['tinhly'] },
+      { label: 'Nguồn tọa độ', fields: ['nguontd'] },
+      { label: 'Loại điểm', fields: ['loaidiem'] },
+      { label: 'GID', fields: ['gid'] }
     ],
     style: {
       type: 'point',
@@ -209,7 +242,7 @@ export const MAP_LAYER_CONFIGS = [
     title: 'Ranh giới tỉnh',
     group: 'administrative',
     geometryType: 'Polygon',
-    visible: true,
+    visible: false,
     selectable: true,
     searchable: true,
     editable: true,
@@ -248,7 +281,7 @@ export const MAP_LAYER_CONFIGS = [
     title: 'Ranh giới xã',
     group: 'administrative',
     geometryType: 'Polygon',
-    visible: true,
+    visible: false,
     selectable: true,
     searchable: true,
     editable: true,
@@ -292,7 +325,7 @@ export const MAP_LAYER_CONFIGS = [
     title: 'Quốc lộ',
     group: 'transport',
     geometryType: 'LineString',
-    visible: true,
+    visible: false,
     selectable: true,
     searchable: true,
     editable: true,
@@ -322,7 +355,7 @@ export const MAP_LAYER_CONFIGS = [
     title: 'Tỉnh lộ',
     group: 'transport',
     geometryType: 'LineString',
-    visible: true,
+    visible: false,
     selectable: true,
     searchable: true,
     editable: true,
@@ -354,10 +387,32 @@ export const MAP_LAYER_CONFIGS = [
 // =========================================================
 // 5. CÁC LỚP RASTER
 // =========================================================
+export const RASTER_PRESENTATION_TYPES = [
+  { id: 'dem', title: 'DEM — Mô hình số độ cao' },
+  { id: 'dsm', title: 'DSM — Mô hình số bề mặt' },
+  { id: 'dtm', title: 'DTM — Mô hình số địa hình' },
+  { id: 'satellite', title: 'Ảnh vệ tinh' },
+  { id: 'aerial', title: 'Ảnh hàng không' },
+  { id: 'uav', title: 'Ảnh UAV' },
+  { id: 'thematic', title: 'Raster chuyên đề' },
+];
+
+export const ELEVATION_RASTER_TYPES = new Set(['dem', 'dsm', 'dtm']);
+
+// Dùng chung bộ công cụ trình bày, giữ nguyên loại dữ liệu trong metadata.
+export function rasterPresentationGroup(type) {
+  if (ELEVATION_RASTER_TYPES.has(type)) return 'dem';
+  if (type === 'uav') return 'aerial';
+  return type || 'thematic';
+}
+
 export const RASTER_LAYER_CONFIGS = [
+  // presentation_type: dem | dsm | dtm | satellite | aerial | uav | thematic.
+  // DSM/DTM chứa cao độ; uav ở đây chỉ ảnh, không mặc nhiên là dữ liệu cao độ.
   //Ảnh vệ tinh 25K
   {
     id: 'vn25k',
+    presentation_type: 'satellite',
     title: 'Dữ liệu nền VN25K',
     group: 'raster',
     layerName: 'fast_alpha',
@@ -368,13 +423,61 @@ export const RASTER_LAYER_CONFIGS = [
   //DEM việt nam 30m
   {
     id: 'dem_vietnam',
+    presentation_type: 'dem',
     title: 'DEM Việt Nam (SRTM 30 m)',
-    group: 'raster',
+    group: 'dem',
     layerName: 'SRTM_30_VN_UTM',
     visible: false,
     format: 'image/png',
     transparent: true,
     minZoom: 1,
     maxZoom: 30,
-  }
+  },
+  // DEM 10 m theo tỉnh: publish GeoTIFF trong workspace webgis với đúng layerName.
+  // Khai báo sẵn, mặc định tắt; chỉ bật sau khi lớp đã được publish trên GeoServer.
+  ...[
+    ['an_giang', 'An Giang'],
+    ['bac_ninh', 'Bắc Ninh'],
+    ['ca_mau', 'Cà Mau'],
+    ['can_tho', 'Cần Thơ'],
+    ['cao_bang', 'Cao Bằng'],
+    ['da_nang', 'Đà Nẵng'],
+    ['dak_lak', 'Đắk Lắk'],
+    ['dien_bien', 'Điện Biên'],
+    ['dong_nai', 'Đồng Nai'],
+    ['dong_thap', 'Đồng Tháp'],
+    ['gia_lai', 'Gia Lai'],
+    ['ha_noi', 'Hà Nội'],
+    ['ha_tinh', 'Hà Tĩnh'],
+    ['hai_phong', 'Hải Phòng'],
+    ['hue', 'Huế'],
+    ['hung_yen', 'Hưng Yên'],
+    ['khanh_hoa', 'Khánh Hòa'],
+    ['lai_chau', 'Lai Châu'],
+    ['lam_dong', 'Lâm Đồng'],
+    ['lang_son', 'Lạng Sơn'],
+    ['lao_cai', 'Lào Cai'],
+    ['nghe_an', 'Nghệ An'],
+    ['ninh_binh', 'Ninh Bình'],
+    ['phu_tho', 'Phú Thọ'],
+    ['quang_ngai', 'Quảng Ngãi'],
+    ['quang_ninh', 'Quảng Ninh'],
+    ['quang_tri', 'Quảng Trị'],
+    ['son_la', 'Sơn La'],
+    ['tay_ninh', 'Tây Ninh'],
+    ['thai_nguyen', 'Thái Nguyên'],
+    ['thanh_hoa', 'Thanh Hóa'],
+    ['tp_ho_chi_minh', 'TP. Hồ Chí Minh'],
+    ['tuyen_quang', 'Tuyên Quang'],
+    ['vinh_long', 'Vĩnh Long'],
+  ].map(([province, title]) => ({
+    id: `dem_${province}`,
+    title: `DEM 10 m — ${title}`,
+    presentation_type: 'dem',
+    group: 'dem',
+    layerName: `dem_${province}`,
+    visible: false,
+    format: 'image/png',
+    transparent: true,
+  }))
 ];

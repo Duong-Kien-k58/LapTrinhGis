@@ -8,6 +8,11 @@ https://docs.djangoproject.com/en/6.0/howto/deployment/wsgi/
 """
 
 import os
+import sys
+from pathlib import Path
+
+sys.pycache_prefix = str(Path(__file__).resolve().parents[2] / 'temp' / 'python-cache')
+os.environ['PYTHONPYCACHEPREFIX'] = sys.pycache_prefix
 
 from django.core.wsgi import get_wsgi_application
 

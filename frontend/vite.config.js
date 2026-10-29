@@ -7,6 +7,11 @@ const cesiumBaseUrl = 'cesiumStatic';
 
 export default defineConfig({
   envDir: fileURLToPath(new URL('..', import.meta.url)),
+  cacheDir: fileURLToPath(new URL('../temp/vite-cache', import.meta.url)),
+  build: {
+    outDir: fileURLToPath(new URL('../temp/frontend-dist', import.meta.url)),
+    emptyOutDir: true,
+  },
   plugins: [
     viteStaticCopy({
       targets: [

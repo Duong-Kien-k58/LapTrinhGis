@@ -2,6 +2,11 @@
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
+from pathlib import Path
+
+# Khởi tạo trước khi import Django, tránh sinh __pycache__ cạnh mã nguồn.
+sys.pycache_prefix = str(Path(__file__).resolve().parents[1] / 'temp' / 'python-cache')
+os.environ['PYTHONPYCACHEPREFIX'] = sys.pycache_prefix
 
 
 def main():

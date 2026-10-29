@@ -4,6 +4,7 @@ import 'tabulator-tables/dist/css/tabulator.min.css';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import './styles/main.css';
 import './styles/login.css';
+import './config/projections.js';
 import { initLoginUI } from './tool/loginTool.js';
 import { createPositionSearchTool } from './tool/positionSearchTool.js';
 import { initWorkspaceTools, createSystemTools } from './tool/workspaceTools.js';
@@ -55,12 +56,13 @@ import {
 import { createCrudManager } from './tool/crudManager.js';
 import { createSearchManager } from './tool/searchManager.js';
 import { createPopupTool } from './tool/popupTool.js';
-import { createCesiumTool } from './tool/cesiumTool.js';
+import { createCesiumTool, showStartup3D } from './tool/cesiumTool.js';
 import { createLayerCatalogTool } from './tool/layerCatalogTool.js';
 import { createRasterManager } from './tool/rasterManager.js';
 import { createDataTableTool } from './tool/dataTableTool.js';
 import { createLayerStyleTool } from './tool/layerStyleTool.js';
 import { createLayerOverviewTool } from './tool/layerOverviewTool.js';
+import { createTerrainAnalysisTool } from './tool/terrainAnalysisTool.js';
 //#endregion
 
 //#region 2. KHỞI TẠO LỚP VÀ NHÓM BẢN ĐỒ
@@ -102,7 +104,7 @@ function createWfsUrl(typeName) {
 function createWmsLayer(cfg) {
   // Các lớp hành chính có nhãn dùng một ảnh WMS cho toàn khung nhìn. Điều này
   // ngăn GeoServer vẽ lặp nhãn ở từng tile khi bản đồ được ghép nhiều ô ảnh.
-  const isLabelledAdministrativeLayer = ['vn_tinh', 'vn_xa'].includes(cfg.id);
+  const isLabelledAdministrativeLayer = ['ranhgioi', 'tthc', 'vn_tinh', 'vn_xa'].includes(cfg.id);
   const sourceOptions = {
     url: GEOSERVER_CONFIG.wmsUrl,
     params: {
@@ -115,8 +117,16 @@ function createWmsLayer(cfg) {
   const layerOptions = {
     title: cfg.title,
     visible: cfg.visible,
+    zIndex: cfg.zIndex,
     source: isLabelledAdministrativeLayer
-      ? new ImageWMS({ ...sourceOptions, ratio: 1.5, imageLoadFunction: loadWmsImage })
+      ? new ImageWMS({
+          ...sourceOptions,
+          // Một ảnh theo đúng khung nhìn; DPR cao và vùng đệm làm vượt
+          // giới hạn bộ nhớ render WMS, khiến 2D mất lớp nhưng 3D vẫn hiện.
+          ratio: 1,
+          hidpi: false,
+          imageLoadFunction: loadWmsImage
+        })
       : new TileWMS({ ...sourceOptions, tileLoadFunction: loadWmsImage })
   };
   const layer = isLabelledAdministrativeLayer
@@ -172,7 +182,7 @@ function createRasterLayer(cfg) {
   layer.set('configId', cfg.id);
   layer.set('layerKind', 'raster');
   layer.set('rasterName', cfg.layerName);
-  layer.set('rasterMetadata', { name: cfg.layerName, title: cfg.title, presentation_type: cfg.id === 'dem_vietnam' ? 'dem' : 'satellite' });
+  layer.set('rasterMetadata', { name: cfg.layerName, title: cfg.title, presentation_type: cfg.presentation_type || 'thematic' });
 
   return layer;
 }
@@ -245,7 +255,8 @@ const mapGroups = LAYER_GROUP_CONFIGS.map(function (groupCfg) {
 });
 
 const baseGroup = mapGroups.find(group => group.get('layerGroupKind') === 'base');
-const rasterGroup = mapGroups.find(group => group.get('layerGroupKind') === 'raster');
+const rasterGroups = mapGroups.filter(group => group.get('layerGroupKind') === 'raster');
+const rasterGroup = groupMap.raster;
 const thematicGroups = mapGroups.filter(group => group.get('layerGroupKind') === 'wms');
 
 // WFS vẫn giữ để CRUD, tìm kiếm và chọn đối tượng hoạt động.
@@ -270,7 +281,6 @@ const map = new Map({
     zoom: 5
   })
 });
-createCesiumTool(map);
 // ================== CONTROL CƠ BẢN ==================
 const popupTool = createPopupTool({
   map,
@@ -279,8 +289,8 @@ const popupTool = createPopupTool({
 });
 
 const basicTools = createBasicTools(map);
-const layerStyle = createLayerStyleTool({ thematicGroups, rasterGroup });
-const layerOverview = createLayerOverviewTool({ map, thematicGroups, rasterGroup });
+const layerStyle = createLayerStyleTool({ thematicGroups, rasterGroup, rasterGroups });
+const layerOverview = createLayerOverviewTool({ map, thematicGroups, rasterGroup, rasterGroups });
 
 // Bảng mục lục lớp theo kiểu ArcMap. Bảng này thay LayerSwitcher cũ.
 const layerCatalog = createLayerCatalogTool({
@@ -288,6 +298,7 @@ const layerCatalog = createLayerCatalogTool({
   baseGroup,
   thematicGroups,
   rasterGroup,
+  rasterGroups,
   wfsGroup,
   layerConfigs,
   rasterLayerMap
@@ -367,12 +378,11 @@ document.querySelectorAll('.menu-group-title').forEach(function (title) {
 });
 
 // CHUYỂN NHANH DỊCH VỤ BẢN ĐỒ
-// Vector hiển thị toàn bộ lớp vector, trừ Khung 25K. Hai chế độ raster chỉ
-// hiện raster được chọn cùng Nền biển và Nước ngoài; Khung 25K luôn chỉ bật tay.
+// Vector hiển thị các lớp chuyên đề; raster giữ lớp ranh giới trên nền ảnh.
 function setLayerService(service) {
   const showVector = service === 'vector';
   const rasterLayerId = service === 'satellite' ? 'vn25k' : 'dem_vietnam';
-  const rasterBackgroundLayerIds = new Set(['nenbien', 'nuocngoai']);
+  const rasterBackgroundLayerIds = new Set(['ranhgioi']);
   const manualOnlyLayerIds = new Set(['khung25k']);
 
   // Không dựa vào cả nhóm "Dữ liệu nền", vì nhóm này còn có Khung 25K.
@@ -382,8 +392,8 @@ function setLayerService(service) {
     config.wmsLayer.setVisible(!isManualOnly && (showVector || isRasterBackground));
   });
   thematicGroups.forEach(function (group) {
-    // Nhóm background phải vẫn bật ở raster để Nền biển/Nước ngoài hiển thị.
-    const isBackgroundGroup = group.get('tocGroupId') === 'background';
+    // Giữ nhóm Cơ sở đo đạc để lớp ranh giới vẫn hiển thị trên raster.
+    const isBackgroundGroup = group.get('tocGroupId') === 'survey';
     group.setVisible(showVector || isBackgroundGroup);
   });
 
@@ -391,9 +401,7 @@ function setLayerService(service) {
   Object.entries(rasterLayerMap).forEach(function ([id, layer]) {
     layer.setVisible(!showVector && id === rasterLayerId);
   });
-  if (rasterGroup) {
-    rasterGroup.setVisible(!showVector);
-  }
+  rasterGroups.forEach(group => group.setVisible(!showVector));
 
   document.querySelectorAll('[data-layer-service]').forEach(function (item) {
     item.classList.toggle('active', item.dataset.layerService === service);
@@ -444,17 +452,18 @@ document.querySelectorAll('[data-tool-action], [data-raster-action]').forEach(bu
 let initialRasterCatalogRestored = false;
 const rasterManager = createRasterManager({
   rasterGroup,
+  rasterGroups,
   thematicGroups,
   onRasterStyleInvalidated: layerStyle.forget,
   beforeOpen: () => { crudManager.cancel(); toolManager.closeAllTools(); closeMenu(); },
   onRasterChanged: () => {
     Object.keys(rasterLayerMap).forEach(id => delete rasterLayerMap[id]);
-    [...thematicGroups, rasterGroup].forEach(group => group.getLayers().forEach(layer => {
+    [...thematicGroups, ...rasterGroups].forEach(group => group.getLayers().forEach(layer => {
       if (layer.get('rasterName')) rasterLayerMap[layer.get('configId')] = layer;
     }));
     if (!initialRasterCatalogRestored) {
       initialRasterCatalogRestored = true;
-      layerCatalog.restoreVisibility();
+      layerCatalog.restoreAddedLayers();
     } else layerCatalog.render();
     window.dispatchEvent(new CustomEvent('webgis-rasters-changed'));
   }
@@ -473,12 +482,15 @@ let systemTools = null;
 const positionSearch = createPositionSearchTool(map);
 auxiliaryTools = initWorkspaceTools({ map });
 systemTools = createSystemTools();
+const terrainAnalysis = createTerrainAnalysisTool({ map });
+
 document.querySelectorAll('[data-section]').forEach(button => {
   button.addEventListener('click', () => {
     const action = button.dataset.section;
     if (action === 'position') positionSearch.open();
     else if (action === 'tool-search') auxiliaryTools.openToolSearch();
     else if (action === 'support') systemTools.openSupport();
+    else if (action === 'terrain-slope') terrainAnalysis.open();
     else return;
     closeMenu();
   });
@@ -496,6 +508,7 @@ document.addEventListener('webgis-tool-activate', event => {
   auxiliaryTools?.closeAll?.(name);
   systemTools?.closeAll?.(name);
   if (name !== 'position') positionSearch.close();
+  if (name !== 'terrain-slope' && !event.detail?.viewModeChange) terrainAnalysis.close();
 });
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-menu-action], [data-raster-action], [data-tool-action], [data-config-action], [data-section]');
@@ -555,7 +568,13 @@ const DISPLAY_CONFIG_STORAGE_KEY = 'webgis_display_config_v1';
 //Hàm đọc cấu hình đã lưu
 function getSavedDisplayConfig() {
   try {
-    return JSON.parse(localStorage.getItem(DISPLAY_CONFIG_STORAGE_KEY)) || {};
+    const saved = JSON.parse(localStorage.getItem(DISPLAY_CONFIG_STORAGE_KEY)) || {};
+    if (saved.layers?.['wms:ub_tinh'] && !saved.layers['wms:tthc']) {
+      const { title, ...state } = saved.layers['wms:ub_tinh'];
+      saved.layers['wms:tthc'] = state;
+      delete saved.layers['wms:ub_tinh'];
+    }
+    return saved;
   } catch (error) {
     return {};
   }
@@ -608,7 +627,7 @@ function getDisplayLayerItems() {
       layer: config.wmsLayer
     });
   });
-  rasterGroup.getLayers().forEach(function (layer) {
+  rasterGroups.forEach(group => group.getLayers().forEach(function (layer) {
     const id = layer.get('configId');
     items.push({
       key: 'raster:' + id,
@@ -617,7 +636,7 @@ function getDisplayLayerItems() {
       title: layer.get('title'),
       layer
     });
-  });
+  }));
   return items;
 }
 
@@ -878,6 +897,9 @@ function applyMapConfig(shouldSave) {
     };
 
     saveDisplayConfig(saved);
+    layerCatalog.saveVisibility({
+      layers: Object.fromEntries(BASE_LAYER_CONFIGS.map(cfg => [cfg.id, baseLayerMap[cfg.id].getVisible()]))
+    });
     alert('Đã lưu cấu hình hiển thị bản đồ');
   }
 }
@@ -940,6 +962,9 @@ function applyGroupConfig(shouldSave) {
 
   if (shouldSave) {
     saveDisplayConfig(saved);
+    layerCatalog.saveVisibility({
+      groups: Object.fromEntries(displayGroupConfigs.map(item => [item.id, item.group.getVisible()]))
+    });
     alert('Đã lưu cấu hình nhóm bản đồ');
   }
 }
@@ -1061,6 +1086,7 @@ function applyLayerConfig(item, shouldSave) {
       maxZoom: maxZoomValue
     };
     saveDisplayConfig(saved);
+    layerCatalog.saveVisibility({ layers: { [layer.get('configId')]: visible } });
     alert('Đã lưu cấu hình lớp bản đồ');
   }
 }
@@ -1075,7 +1101,27 @@ document.querySelectorAll('[data-config-action]').forEach(function (item) {
 
 // ================== ÁP DỤNG CẤU HÌNH SAU KHI TOÀN BỘ MAP ĐÃ TẠO XONG ==================
 applySavedLayerDisplayConfig(); // Áp dụng cấu hình lớp.
+// Visibility trong mục lục là trạng thái được lưu gần nhất từ cả hai giao diện.
+// Áp dụng sau cấu hình hiển thị để các giá trị cũ không ghi đè lần bấm Lưu.
+layerCatalog.restoreVisibility();
 applySavedMapControlConfig(); // Áp dụng cấu hình bản đồ.
+// Chuyển cấu hình cũ sang nền Satellite + ranh giới một lần; sau đó giữ lựa chọn người dùng.
+if (localStorage.getItem('webgis_boundary_basemap_v1') !== '1') {
+  setBaseLayerById('satellite');
+  layerConfigs.forEach(config => config.wmsLayer.setVisible(config.id === 'ranhgioi'));
+  Object.values(rasterLayerMap).forEach(layer => layer.setVisible(false));
+  thematicGroups.forEach(group => group.setVisible(true));
+  layerCatalog.saveVisibility({
+    layers: Object.fromEntries([
+      ...layerConfigs.map(config => [config.id, config.id === 'ranhgioi']),
+      ...Object.keys(rasterLayerMap).map(id => [id, false]),
+      ...BASE_LAYER_CONFIGS.map(config => [config.id, config.id === 'satellite'])
+    ]),
+    groups: Object.fromEntries(thematicGroups.map(group => [group.get('tocGroupId'), true]))
+  });
+  localStorage.setItem('webgis_boundary_basemap_v1', '1');
+  layerCatalog.render();
+}
 //#endregion
 
 // Phản hồi ngắn sau khi lưu để người dùng tiếp tục thao tác trên bản đồ.
@@ -1099,3 +1145,7 @@ map.getControls().forEach(control => {
 });
 initTooltips();
 initLoginUI();
+
+createCesiumTool(map).then(showStartup3D).catch(error => {
+  console.warn('Không thể khởi tạo cảnh 3D:', error);
+});

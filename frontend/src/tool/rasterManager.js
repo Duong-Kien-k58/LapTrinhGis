@@ -1,18 +1,12 @@
 //#region Imports
 import TileLayer from 'ol/layer/Tile.js';
 import TileWMS from 'ol/source/TileWMS.js';
-import { RASTER_LAYER_CONFIGS, GEOSERVER_CONFIG } from '../config/layers.js';
+import { RASTER_LAYER_CONFIGS, GEOSERVER_CONFIG, RASTER_PRESENTATION_TYPES, ELEVATION_RASTER_TYPES } from '../config/layers.js';
 import { requestJson } from './apiClient.js';
 import { createToolPanel, loadWmsImage } from './toolUtils.js';
 //#endregion
 
 //#region 1. Loại trình bày và tạo lớp raster
-export const RASTER_PRESENTATION_TYPES = [
-  { id: 'satellite', title: 'Ảnh vệ tinh' },
-  { id: 'aerial', title: 'Ảnh hàng không' },
-  { id: 'dem', title: 'Dữ liệu DEM' },
-  { id: 'thematic', title: 'Raster chuyên đề' }
-];
 
 export function createPublishedRasterLayer(raster) {
   const layer = new TileLayer({
@@ -39,8 +33,8 @@ function rasterNameFromFile(filename) {
   return filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^[^a-zA-Z]+/, '').slice(0, 63)
 }
 
-export function createRasterManager({ rasterGroup, thematicGroups = [], beforeOpen = () => {}, onRasterChanged = () => {}, onRasterStyleInvalidated = () => {} }) {
-  const groups = [...thematicGroups, rasterGroup];
+export function createRasterManager({ rasterGroup, rasterGroups = [rasterGroup], thematicGroups = [], beforeOpen = () => {}, onRasterChanged = () => {}, onRasterStyleInvalidated = () => {} }) {
+  const groups = [...thematicGroups, ...rasterGroups];
   const rasterLayers = () => groups.flatMap(group => group.getLayers().getArray()).filter(layer => layer.get('rasterName'));
   const panel = createToolPanel({
     id: 'raster-manager-panel',
@@ -139,7 +133,12 @@ export function createRasterManager({ rasterGroup, thematicGroups = [], beforeOp
         layer.set('title', raster.title)
         layer.set('rasterMetadata', raster)
         layer.getSource()?.updateParams({ _reload: Date.now() })
-      } else rasterGroup.getLayers().push(createPublishedRasterLayer(raster))
+      } else {
+        const target = ELEVATION_RASTER_TYPES.has(raster.presentation_type)
+          ? rasterGroups.find(group => group.get('tocGroupId') === 'dem') || rasterGroup
+          : rasterGroup
+        target.getLayers().push(createPublishedRasterLayer(raster))
+      }
     })
     onRasterChanged()
   }
@@ -148,6 +147,8 @@ export function createRasterManager({ rasterGroup, thematicGroups = [], beforeOp
     clearPreview()
     const raster = rasters.find((item) => item.name === select.value)
     if (raster && currentAction !== 'add') {
+      presentationTypeInput.disabled = Boolean(CONFIGURED_RASTERS.find(item => item.name === raster.name)?.presentation_type)
+      presentationTypeInput.title = presentationTypeInput.disabled ? 'Loại dữ liệu của lớp có sẵn được quản lý trong cấu hình.' : ''
       titleInput.value = raster.title
       nameInput.value = raster.name
       presentationTypeInput.value = raster.presentation_type || 'thematic'
@@ -161,7 +162,9 @@ export function createRasterManager({ rasterGroup, thematicGroups = [], beforeOp
     if (version !== loadVersion) return
     const rasterByName = new Map(CONFIGURED_RASTERS.filter(item => !(data.deleted_names || []).includes(item.name)).map((raster) => [raster.name, raster]))
     data.rasters.forEach((raster) => {
-      rasterByName.set(raster.name, { ...rasterByName.get(raster.name), ...raster })
+      const configured = CONFIGURED_RASTERS.find(item => item.name === raster.name)
+      rasterByName.set(raster.name, { ...rasterByName.get(raster.name), ...raster,
+        presentation_type: configured?.presentation_type || raster.presentation_type })
     })
     rasters = [...rasterByName.values()]
     const selected = select.value
@@ -319,7 +322,11 @@ export function createRasterManager({ rasterGroup, thematicGroups = [], beforeOp
     titleInput.closest('label').hidden = isDelete
     typeRow.hidden = isDelete
     updateMetadataButton.hidden = isAdd || isDelete
-    if (isAdd) presentationTypeInput.value = 'thematic'
+    if (isAdd) {
+      presentationTypeInput.value = 'thematic'
+      presentationTypeInput.disabled = false
+      presentationTypeInput.title = ''
+    }
     saveButton.disabled = false
     saveButton.textContent = isAdd ? 'Thêm Raster' : isDelete ? 'Xác nhận xóa' : 'Cập nhật Raster'
   }
