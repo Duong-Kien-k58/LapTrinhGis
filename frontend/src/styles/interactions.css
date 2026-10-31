@@ -1,0 +1,127 @@
+/* Shared interaction polish, loaded after component styles. */
+:root {
+  --motion-fast: 150ms;
+  --motion-enter: 220ms;
+  --motion-ease: cubic-bezier(.22, 1, .36, 1);
+  --interaction-ring: #83dfd0;
+}
+
+/* Also covers controls created dynamically by map tools and dialogs.
+   Individual scale/translate preserve positioning transforms used by OpenLayers. */
+:is(.map-wrapper, .login-dialog) :is(button, a[href], [role="button"], input, select, textarea) {
+  transition-property: background-color, border-color, color, box-shadow, opacity, filter, transform, scale, translate;
+  transition-duration: var(--motion-fast);
+  transition-timing-function: ease-out;
+}
+
+:is(.map-wrapper, .login-dialog) :is(button, [role="button"], a[href]):not(:disabled, [aria-disabled="true"], [aria-busy="true"]) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  :is(.map-wrapper, .login-dialog) :is(button, [role="button"], a[href]):not(:disabled, [aria-disabled="true"], [aria-busy="true"]):hover {
+    filter: brightness(1.12);
+  }
+
+  /* Only floating icon controls lift; menu rows and table cells stay aligned. */
+  :is(.workspace-header, #right-map-tools) button:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):hover,
+  #right-map-tools .layer-catalog-button:hover {
+    translate: 0 -2px;
+    box-shadow: 0 5px 14px #0003, 0 0 0 1px #83dfd035;
+  }
+
+  :is(.search-suggest-item, .toc-group-header, .toc-layer-row, .cesium-effect, .projection-zone label):hover {
+    background-color: var(--surface-hover);
+  }
+
+  :is(.menu-group-title, .menu-sub-item):hover .menu-icon {
+    color: var(--interaction-ring);
+    border-color: #83dfd040;
+    background-color: #83dfd010;
+  }
+
+  .menu-sub-item:hover::before { translate: 2px 0; opacity: 1; }
+
+  :is(.map-wrapper, .login-dialog) :is(input, select, textarea):not(:disabled, [aria-invalid="true"]):hover {
+    border-color: #6d9b9c;
+  }
+}
+
+:is(.map-wrapper, .login-dialog) :is(button, [role="button"], a[href]):not(:disabled, [aria-disabled="true"], [aria-busy="true"]):active {
+  scale: .97;
+  filter: brightness(.96);
+}
+
+:is(.workspace-header, #right-map-tools) button:not(:disabled):active {
+  translate: 0 0;
+}
+
+/* Keep keyboard focus visible, including in clipped rows and search fields. */
+:is(.map-wrapper, .login-dialog) :is(button, a[href], [role="button"], input, select, textarea):focus-visible {
+  outline: 2px solid var(--interaction-ring);
+  outline-offset: -2px;
+}
+
+.workspace-header .search-box {
+  transition: border-color var(--motion-fast), box-shadow var(--motion-fast), background-color var(--motion-fast);
+}
+.workspace-header .search-box:focus-within {
+  border-color: var(--interaction-ring);
+  box-shadow: 0 0 0 3px #83dfd018;
+}
+
+:is(.map-wrapper, .login-dialog) :is(button, input, select, textarea):disabled,
+:is(.map-wrapper, .login-dialog) [aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+:is(.search-suggest-item, .toc-group-header, .toc-layer-row, .cesium-effect, .projection-zone label) {
+  transition: background-color var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast), box-shadow var(--motion-fast);
+}
+.menu-sub-item::before {
+  transition: translate var(--motion-fast) ease-out, opacity var(--motion-fast);
+}
+.layer-overview-picker-button i {
+  transition: transform var(--motion-fast) ease-out;
+}
+
+/* No forwards fill: panels remain draggable after their entrance finishes. */
+:is(.crud-panel.active, .advanced-panel.active, .attribute-table-panel.active,
+  .layer-catalog-panel.shown, .raster-tool-panel.shown, .popup-tool-panel.active,
+  .search-suggest-panel.active, .layer-overview-control.shown,
+  .layer-overview-options:not([hidden]), .toc-context-menu:not([hidden]),
+  .terrain-tool-panel:not([hidden]), .cesium-options-panel:not([hidden]),
+  .simple-popup.active .simple-popup-box, .login-dialog[open]) {
+  animation: ui-surface-enter var(--motion-enter) var(--motion-ease);
+}
+
+/* Opacity only for overlays whose transforms position them over the map. */
+:is(.workspace-toast, #webgis-tooltip):not([hidden]), .ol-popup {
+  animation: ui-fade-in var(--motion-fast) ease-out;
+}
+
+@keyframes ui-surface-enter {
+  from { opacity: 0; translate: 0 6px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes ui-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Preserve immediate feedback while honoring the operating system preference. */
+@media (prefers-reduced-motion: reduce) {
+  :is(.map-wrapper, .login-dialog),
+  :is(.map-wrapper, .login-dialog) *,
+  :is(.map-wrapper, .login-dialog) *::before,
+  :is(.map-wrapper, .login-dialog) *::after,
+  #webgis-tooltip {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  :is(.workspace-header, #right-map-tools) button,
+  #right-map-tools .layer-catalog-button,
+  .menu-sub-item::before { translate: none !important; }
+  :is(.map-wrapper, .login-dialog) :is(button, [role="button"], a[href]):active { scale: none; }
+}

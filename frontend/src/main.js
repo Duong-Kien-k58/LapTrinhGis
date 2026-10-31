@@ -4,6 +4,7 @@ import 'tabulator-tables/dist/css/tabulator.min.css';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import './styles/main.css';
 import './styles/login.css';
+import './styles/interactions.css';
 import './config/projections.js';
 import { initLoginUI } from './tool/loginTool.js';
 import { createPositionSearchTool } from './tool/positionSearchTool.js';

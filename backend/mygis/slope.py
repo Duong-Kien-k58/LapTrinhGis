@@ -19,23 +19,36 @@ class SlopeAnalysis:
 
     def calculate_block(self, elevation, nodata, transform, projection):
         import numpy as np
-        from osgeo import gdal
+        result = np.full(elevation.shape, nodata, dtype=np.float32)
+        if min(elevation.shape) < 3:
+            return result
         available = np.isfinite(elevation) & (elevation != nodata)
-        neighborhoods = (available[:-2, :-2] & available[:-2, 1:-1] & available[:-2, 2:] &
-                         available[1:-1, :-2] & available[1:-1, 1:-1] & available[1:-1, 2:] &
-                         available[2:, :-2] & available[2:, 1:-1] & available[2:, 2:])
-        if not neighborhoods.any():
-            return None
-        tile = gdal.GetDriverByName('MEM').Create('', elevation.shape[1], elevation.shape[0], 1, gdal.GDT_Float32)
-        tile.SetGeoTransform(transform)
-        tile.SetProjection(projection)
-        tile.GetRasterBand(1).SetNoDataValue(nodata)
-        tile.GetRasterBand(1).WriteArray(elevation)
-        slopes = gdal.DEMProcessing('', tile, 'slope', format='MEM', alg='Horn',
-            slopeFormat='percent' if self.unit == 'percent' else 'degree', scale=1.0, computeEdges=False)
-        values = slopes.GetRasterBand(1).ReadAsArray()
-        slopes = tile = None
-        return values
+        neighbors = [available[dy:available.shape[0] - 2 + dy, dx:available.shape[1] - 2 + dx]
+                     for dy in range(3) for dx in range(3) if (dy, dx) != (1, 1)]
+        eligible = available[1:-1, 1:-1] & (np.sum(neighbors, axis=0) >= 7)
+        if not eligible.any():
+            return result
+        z = np.where(available, elevation, 0).astype(np.float64)
+
+        def weighted(cells):
+            total = np.zeros(eligible.shape, dtype=np.float64)
+            weight = np.zeros(eligible.shape, dtype=np.float64)
+            for dy, dx, factor in cells:
+                window = (slice(dy, z.shape[0] - 2 + dy), slice(dx, z.shape[1] - 2 + dx))
+                total += z[window] * factor
+                weight += available[window] * factor
+            return np.divide(total * 4, weight, out=np.zeros_like(total), where=weight > 0)
+
+        east = weighted([(0, 2, 1), (1, 2, 2), (2, 2, 1)])
+        west = weighted([(0, 0, 1), (1, 0, 2), (2, 0, 1)])
+        south = weighted([(2, 0, 1), (2, 1, 2), (2, 2, 1)])
+        north = weighted([(0, 0, 1), (0, 1, 2), (0, 2, 1)])
+        dx = (east - west) / (8 * abs(transform[1]))
+        dy = (south - north) / (8 * abs(transform[5]))
+        gradient = np.hypot(dx, dy)
+        values = gradient * 100 if self.unit == 'percent' else np.degrees(np.arctan(gradient))
+        result[1:-1, 1:-1] = np.where(eligible, values, nodata).astype(np.float32)
+        return result
 
     def class_indices(self, values):
         import numpy as np
@@ -55,11 +68,11 @@ class SlopeAnalysis:
         return classes
 
     def report_fields(self):
-        return {'method': 'Horn 3×3', 'unit': self.unit}
+        return {'method': 'Horn 3×3, hiệu chỉnh trọng số khi thiếu một ô lân cận', 'unit': self.unit}
 
     def metadata(self, title):
         return {'METHOD': 'Horn 3x3', 'SLOPE_UNIT': self.unit, 'SOURCE_TITLE': title,
-                'NODATA_POLICY': 'strict 3x3 neighborhood; AOI mask applied after slope'}
+                'NODATA_POLICY': 'valid center and >=7 valid neighbors; weighted sides; outer edge NoData; AOI mask applied after slope'}
 
 
 def format_report(report, title):

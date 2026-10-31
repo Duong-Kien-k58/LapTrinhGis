@@ -473,7 +473,9 @@ trình duyệt; GDAL kiểm tra band và tính thống kê ở tiến trình ri�
   và báo cáo TXT tiếng Việt theo 7 cấp (0–3–8–15–25–35–45–90°; quy đổi tương ứng khi dùng %).
   Ảnh xem trước tối đa 1536 px, dùng lấy mẫu gần nhất; chỉ GeoTIFF là raster số
   đầy đủ. Diện tích thống kê tính theo ô lưới hệ chiếu.
-- NoData, giá trị không hữu hạn và ô thiếu hàng xóm 3×3 bị loại. Có đọc thêm
+- Ô trung tâm phải hợp lệ và có ít nhất 7/8 ô lân cận hợp lệ cho cả độ dốc và
+  hướng dốc; hiệu chỉnh trọng số khi thiếu một ô. NoData và giá trị không hữu hạn
+  không tham gia tính; ô không đủ điều kiện bị loại. Có đọc thêm
   vùng đệm 2 ô trước khi tính rồi mới áp mặt nạ vùng chọn để tránh tạo biên giả.
   Chất lượng kết quả phụ thuộc DEM nguồn; thao tác này không lấp chỗ trống.
 - **Phân tích địa hình → Phân tích hướng dốc** dùng cùng bảng chọn DEM, tải tệp,
