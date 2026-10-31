@@ -1,7 +1,7 @@
 //#region Imports
 import TileLayer from 'ol/layer/Tile.js';
 import TileWMS from 'ol/source/TileWMS.js';
-import { RASTER_LAYER_CONFIGS, GEOSERVER_CONFIG, RASTER_PRESENTATION_TYPES, ELEVATION_RASTER_TYPES } from '../config/layers.js';
+import { RASTER_LAYER_CONFIGS, GEOSERVER_CONFIG } from '../config/layers.js';
 import { requestJson } from './apiClient.js';
 import { createToolPanel, loadWmsImage } from './toolUtils.js';
 //#endregion
@@ -43,7 +43,7 @@ export function createRasterManager({ rasterGroup, rasterGroups = [rasterGroup],
       <label data-raster-select-row>Raster đã xuất bản<select data-raster-select></select></label>
       <label data-raster-name-row>Tên raster<input data-raster-name maxlength="63" placeholder="vd: dem_daklak"></label>
       <label data-raster-title-row>Tên hiển thị<input data-raster-title maxlength="150"></label>
-      <label data-raster-type-row>Loại trình bày<select data-raster-type></select></label>
+      <input data-raster-type type="hidden" value="raster"><span data-raster-type-row hidden></span>
       <label data-raster-file-row>Tệp GeoTIFF<input data-raster-file type="file" accept=".tif,.tiff,image/tiff"></label>
       <p class="tool-hint" data-raster-upload-hint>Web chỉ upload GeoTIFF nhỏ hơn 512 MB. File lớn hơn: publish GeoServer thủ công, sau đó khai báo trong layers.js.</p>
       <div class="raster-info" data-raster-info>Chọn GeoTIFF để đọc thông tin và preview.</div>
@@ -79,7 +79,7 @@ export function createRasterManager({ rasterGroup, rasterGroups = [rasterGroup],
   let busy = false
   let loadVersion = 0
   let rasters = []
-  presentationTypeInput.replaceChildren(...RASTER_PRESENTATION_TYPES.map((item) => new Option(item.title, item.id)))
+  presentationTypeInput.value = 'raster'
 
   function setStatus(message, isError = false) {
     status.textContent = message
@@ -134,9 +134,7 @@ export function createRasterManager({ rasterGroup, rasterGroups = [rasterGroup],
         layer.set('rasterMetadata', raster)
         layer.getSource()?.updateParams({ _reload: Date.now() })
       } else {
-        const target = ELEVATION_RASTER_TYPES.has(raster.presentation_type)
-          ? rasterGroups.find(group => group.get('tocGroupId') === 'dem') || rasterGroup
-          : rasterGroup
+        const target = rasterGroup
         target.getLayers().push(createPublishedRasterLayer(raster))
       }
     })
@@ -151,7 +149,7 @@ export function createRasterManager({ rasterGroup, rasterGroups = [rasterGroup],
       presentationTypeInput.title = presentationTypeInput.disabled ? 'Loại dữ liệu của lớp có sẵn được quản lý trong cấu hình.' : ''
       titleInput.value = raster.title
       nameInput.value = raster.name
-      presentationTypeInput.value = raster.presentation_type || 'thematic'
+      presentationTypeInput.value = 'raster'
       renderInfo(raster.width ? { ...raster, filename: raster.source_filename || raster.name } : null)
     }
   }
@@ -164,7 +162,7 @@ export function createRasterManager({ rasterGroup, rasterGroups = [rasterGroup],
     data.rasters.forEach((raster) => {
       const configured = CONFIGURED_RASTERS.find(item => item.name === raster.name)
       rasterByName.set(raster.name, { ...rasterByName.get(raster.name), ...raster,
-        presentation_type: configured?.presentation_type || raster.presentation_type })
+        presentation_type: 'raster', title: configured?.title || raster.title })
     })
     rasters = [...rasterByName.values()]
     const selected = select.value
@@ -320,7 +318,7 @@ export function createRasterManager({ rasterGroup, rasterGroups = [rasterGroup],
     nameRow.hidden = !isAdd
     fileRow.hidden = isDelete
     titleInput.closest('label').hidden = isDelete
-    typeRow.hidden = isDelete
+    typeRow.hidden = true
     updateMetadataButton.hidden = isAdd || isDelete
     if (isAdd) {
       presentationTypeInput.value = 'thematic'

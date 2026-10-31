@@ -1,7 +1,7 @@
-"""Slope: DEM uploads, validation, analysis, results and isolated GDAL workers.
+"""Shared terrain workflow: DEM uploads, validation, results and isolated GDAL workers.
 
 Read in order: temporary storage -> request validation -> HTTP API -> DEM
-inspection -> slope calculation -> background workers. Original rasters are read-only.
+inspection -> block processing -> background workers. Slope/aspect math lives in separate modules. Original rasters are read-only.
 Django imports stay in the API section so QGIS workers need only GDAL and NumPy.
 """
 import json
@@ -74,11 +74,24 @@ def cleanup_expired(root):
         except (ValueError, OSError, KeyError, json.JSONDecodeError):
             continue
 
-MAX_CELLS = 200_000_000
 TTL = 86400
 TIMEOUT = 1800
-COLORS = ['#38b764', '#a7d46f', '#f5e663', '#f6b44c', '#e87842', '#c94444', '#813b64']
-BREAKS = [0, 3, 8, 15, 25, 35, 45, 90]
+
+if __package__:
+    from . import slope, aspect
+else:
+    # GDAL workers execute this file directly, outside Django's environment.
+    import slope
+    import aspect
+
+
+def analysis_for(operation, unit):
+    return aspect.AspectAnalysis(unit) if operation == 'aspect' else slope.SlopeAnalysis(unit)
+
+
+def format_analysis_report(report, title):
+    module = aspect if report.get('operation') == 'aspect' else slope
+    return module.format_report(report, title)
 
 
 # 2. Kiểm tra yêu cầu và chọn DEM đầu vào.
@@ -92,10 +105,12 @@ def validate_request(data):
     if not isinstance(region, dict) or region.get('mode') not in {'full', 'polygon', 'data'}:
         raise ValueError('Vùng phân tích không hợp lệ.')
     operation = data.get('operation', 'slope')
-    if operation not in {'slope', 'footprint'} or (operation == 'footprint' and region['mode'] != 'data'):
+    if operation not in {'slope', 'aspect', 'footprint'} or (operation == 'footprint' and region['mode'] != 'data'):
         raise ValueError('Thao tác phân tích không hợp lệ.')
+    if operation == 'aspect' and data['unit'] != 'degree':
+        raise ValueError('Hướng dốc chỉ sử dụng đơn vị độ (°).')
     clean_region = {'mode': region['mode']}
-    if region['mode'] == 'data' and operation == 'slope':
+    if region['mode'] == 'data' and operation in {'slope', 'aspect'}:
         clean_region['footprint_id'] = str(UUID(str(region.get('footprint_id', ''))))
     if region['mode'] == 'polygon':
         geom = region.get('geometry', {})
@@ -146,44 +161,6 @@ def public_job(state):
     return result
 
 
-def format_slope_report(report, title):
-    """Báo cáo tải xuống chỉ giữ thông tin nguồn và thống kê cần đọc."""
-    def number(value):
-        return f'{value:,.2f}'.rstrip('0').rstrip('.').replace(',', '_').replace('.', ',').replace('_', '.')
-
-    unit = 'độ (°)' if report['unit'] == 'degree' else 'phần trăm (%)'
-    suffix = '°' if report['unit'] == 'degree' else '%'
-    lines = [
-        'BÁO CÁO PHÂN TÍCH ĐỘ DỐC',
-        f'Dữ liệu đầu vào: {title}',
-        f'Phương pháp: {report["method"]}',
-        f'Đơn vị độ dốc: {unit}',
-        f'Hệ tọa độ: {report["crs"]}',
-        f'Kích thước lưới: {report["width"]} cột × {report["height"]} hàng',
-        f'Độ phân giải: {number(report["resolution"][0])} × {number(report["resolution"][1])} m',
-        '',
-        'KẾT QUẢ THỐNG KÊ',
-        f'Số ô trong vùng: {number(report["selected_cells"])}',
-        f'Số ô tính được: {number(report["valid_cells"])}',
-        f'Số ô bị loại: {number(report["excluded_cells"])}',
-        f'Diện tích có kết quả: {number(report["valid_area_m2"])} m²',
-        f'Độ dốc nhỏ nhất: {number(report["min"])} {suffix}',
-        f'Độ dốc lớn nhất: {number(report["max"])} {suffix}',
-        f'Độ dốc trung bình: {number(report["mean"])} {suffix}',
-        '',
-        'PHÂN CẤP ĐỘ DỐC',
-        'Khoảng độ dốc | Số ô | Tỷ lệ (%) | Diện tích (m²)',
-    ]
-    for index, item in enumerate(report['classes']):
-        if item['max'] is None:
-            interval = f'Từ {number(item["min"])} {suffix} trở lên'
-        else:
-            end = 'đến' if index == len(report['classes']) - 1 else 'đến dưới'
-            interval = f'{number(item["min"])} {end} {number(item["max"])} {suffix}'
-        lines.append(f'{interval} | {number(item["count"])} | {number(item["percent"])} | {number(item["area_m2"])}')
-    return '\n'.join(lines) + '\n'
-
-
 def resolve_input(request, dem):
     from .models import RasterMetadata
     from .raster import geoserver_setting, geoserver_json, raster_store, validate_name
@@ -192,19 +169,17 @@ def resolve_input(request, dem):
     if dem['source'] == 'upload':
         folder, state = owned_upload(request, dem.get('id', ''))
         if state['status'] != 'ready':
-            raise ValueError('DEM tải lên chưa sẵn sàng.')
+            raise ValueError('Raster tải lên chưa sẵn sàng.')
         metadata = state['metadata']
         return folder / 'data.tif', metadata, state['filename']
     name = dem.get('name')
     if validate_name(name):
-        raise ValueError('Tên lớp DEM không hợp lệ.')
-    raster = RasterMetadata.objects.filter(name=name, is_deleted=False, presentation_type__in=['dem', 'dsm', 'dtm']).first()
-    if raster is None:
-        raise ValueError('Lớp chưa được khai báo là DEM, DSM hoặc DTM.')
+        raise ValueError('Tên lớp raster không hợp lệ.')
+    raster = RasterMetadata.objects.filter(name=name, is_deleted=False).first()
     workspace = geoserver_setting('GEOSERVER_WORKSPACE', 'webgis')
     store = raster_store(workspace, name)
     if not store:
-        raise ValueError('Không tìm thấy kho GeoTIFF của lớp DEM.')
+        raise ValueError('Không tìm thấy tệp GeoTIFF của lớp raster.')
     config = geoserver_json(f'workspaces/{workspace}/coveragestores/{store}.json').get('coverageStore', {})
     raw_url = config.get('url', '')
     url = urlsplit(raw_url)
@@ -215,11 +190,11 @@ def resolve_input(request, dem):
     if not path.is_absolute() or not path.is_file() or path.suffix.lower() not in {'.tif', '.tiff'}:
         raise ValueError('Backend không đọc được GeoTIFF đã cấu hình trên GeoServer.')
     path = path.resolve()
-    metadata = dict(raster.technical_metadata)
-    metadata.update(crs=raster.crs)
+    metadata = dict(raster.technical_metadata) if raster else {}
+    metadata.update(crs=raster.crs if raster else '')
     if metadata.get('elevation_unit') not in {'m', 'ft'}:
         metadata['elevation_unit'] = dem.get('elevation_unit')
-    return path, metadata, raster.title
+    return path, metadata, re.sub(r'^DEM\b', 'Raster', raster.title, flags=re.IGNORECASE) if raster else name
 
 
 # 3. API Django: tải DEM, theo dõi và hủy, tính slope, tải kết quả.
@@ -268,6 +243,26 @@ if __name__ != '__main__':
         return env
 
 
+    @require_http_methods(['GET'])
+    def raster_grid(request, raster_name):
+        """Resolve published raster metadata from its GeoTIFF, not placeholder config."""
+        try:
+            path, saved, title = resolve_input(request, {'source': 'geoserver', 'name': raster_name})
+            result = subprocess.run([str(settings.DEM_GDAL_PYTHON), str(Path(__file__).resolve()), '--metadata', str(path)],
+                                    env=gdal_environment(), capture_output=True, text=True, encoding='utf-8', timeout=30)
+            if result.returncode:
+                detail = result.stderr.strip().splitlines()
+                message = detail[-1].removeprefix('ValueError: ') if detail else 'Không đọc được thông tin raster.'
+                return error(message, 422)
+            metadata = json.loads(result.stdout)
+            metadata['elevation_unit'] = metadata.get('elevation_unit') or saved.get('elevation_unit')
+            return success('Đã đọc thông tin raster.', metadata=metadata, title=title)
+        except (ValueError, RuntimeError, FileNotFoundError) as exc:
+            return error(str(exc), 422)
+        except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError):
+            return error('Không đọc được raster. Kiểm tra GeoServer và kết nối máy chủ.', 503)
+
+
     @csrf_protect
     @require_http_methods(['GET', 'POST'])
     def uploads(request):
@@ -285,8 +280,8 @@ if __name__ != '__main__':
                 return error('Chọn tệp GeoTIFF .tif hoặc .tiff.')
             if isinstance(size, bool) or not isinstance(size, int) or not 0 < size <= settings.DEM_UPLOAD_MAX_BYTES:
                 return error('Tệp rỗng hoặc vượt giới hạn tải lên.', 413)
-            if data.get('data_type') not in {'dem', 'dsm', 'dtm'} or data.get('elevation_unit') not in {'m', 'ft'}:
-                return error('Hãy xác nhận loại dữ liệu và đơn vị cao độ.')
+            if data.get('elevation_unit') not in {'m', 'ft'}:
+                return error('Chọn đơn vị giá trị raster.')
             band = int(data.get('band', 1))
             if band < 1 or band > 1024:
                 return error('Band cao độ không hợp lệ.')
@@ -304,7 +299,7 @@ if __name__ != '__main__':
             state = {'id': upload_id, 'owner': request.session['dem_upload_owner'], 'filename': name,
                      'size': size, 'received': 0, 'status': 'uploading',
                      'expires_at': time.time() + settings.DEM_UPLOAD_TTL_SECONDS,
-                     'options': {'band': band, 'epsg': epsg, 'elevation_unit': data['elevation_unit'], 'data_type': data['data_type']}}
+                     'options': {'band': band, 'epsg': epsg, 'elevation_unit': data['elevation_unit'], 'data_type': 'raster'}}
             (folder / 'data.tif').touch()
             write_state(folder, state)
             return success('Đã tạo phiên tải DEM.', upload=public_state(state))
@@ -411,7 +406,7 @@ if __name__ != '__main__':
                 folder = directory(root, identifier)
                 folder.mkdir()
                 data_window = None
-                if data['region']['mode'] == 'data' and data['operation'] == 'slope':
+                if data['region']['mode'] == 'data' and data['operation'] in {'slope', 'aspect'}:
                     footprint_folder = directory(root, data['region']['footprint_id'])
                     footprint_state = read_state(footprint_folder)
                     if (footprint_state['owner'] != owner or footprint_state['expires_at'] < time.time()
@@ -435,12 +430,11 @@ if __name__ != '__main__':
                 now = time.time()
                 state = {'id': identifier, 'owner': owner, 'status': 'queued', 'progress': 0,
                          'source_signature': signature,
-                         'message': 'Đang chuẩn bị DEM…', 'title': title, 'unit': data['unit'],
+                         'message': 'Đang chuẩn bị raster…', 'title': title, 'unit': data['unit'],
                          'expires_at': now + TTL, 'deadline': now + TIMEOUT, 'updated_at': now,
                          'request': data, 'source': {'path': str(path), 'band': int(metadata.get('band', 1)),
                          'elevation_unit': unit, 'crs': metadata.get('crs_wkt') or metadata.get('crs'),
-                         'quality_note': metadata.get('quality_note', '')},
-                         'max_cells': getattr(settings, 'SLOPE_MAX_CELLS', MAX_CELLS)}
+                         'quality_note': metadata.get('quality_note', '')}}
                 if data_window is not None:
                     state['data_window'] = data_window
                 write_state(folder, state)
@@ -479,10 +473,10 @@ if __name__ != '__main__':
                     raise FileNotFoundError
                 name, content_type = files[artifact]
                 # Kết quả từ lần chạy cũ cũng tải được báo cáo TXT tiếng Việt.
-                content = (BytesIO(format_slope_report(state['result'], state['title']).encode('utf-8-sig'))
+                content = (BytesIO(format_analysis_report(state['result'], state['title']).encode('utf-8-sig'))
                            if artifact == 'report' else (folder / name).open('rb'))
                 response = FileResponse(content, content_type=content_type,
-                                        as_attachment=artifact != 'preview', filename=f'slope-{job_id}.{name.split(".")[-1]}')
+                                        as_attachment=artifact != 'preview', filename=f'{state["request"].get("operation", "slope")}-{job_id}.{name.split(".")[-1]}')
                 response['Cache-Control'] = 'private, no-store'
                 return response
             if state['status'] in {'queued', 'running'} and state['deadline'] < time.time():
@@ -675,15 +669,20 @@ def inspect_data_footprint(folder, state, notify):
 
 
 def calculate(folder, state, notify):
-    """GDAL-only path: normalize -> slope with halo -> AOI mask -> statistics/preview."""
+    """Normalize sparse blocks, then calculate/mask/statistically reduce each tile once."""
     import numpy as np
     from osgeo import gdal, ogr, osr
+    analysis = analysis_for(state['request'].get('operation', 'slope'), state['unit'])
+    analysis_name, colors = analysis.name, analysis.colors
     gdal.UseExceptions()
     gdal.SetConfigOption('GDAL_PAM_ENABLED', 'NO')
     # The bundled QGIS GTiff driver needs serial RasterIO for masks spanning multiple blocks.
     gdal.SetConfigOption('GDAL_NUM_THREADS', '1')
     gdal.SetCacheMax(128 * 1024 * 1024)
     creation = ['TILED=YES', 'COMPRESS=DEFLATE', 'PREDICTOR=3', 'BIGTIFF=IF_SAFER']
+    # Sparse tiles are internal only; the downloadable TIFF has ordinary tiles.
+    temporary_creation = creation + ['SPARSE_OK=YES']
+    block_size = 1024
     nodata = -9999.0
     dataset = gdal.OpenEx(state['source']['path'], gdal.OF_RASTER | gdal.OF_READONLY, allowed_drivers=['GTiff'])
     if dataset is None:
@@ -736,14 +735,13 @@ def calculate(folder, state, notify):
         x0, y0 = max(0, dx0 - 2), max(0, dy0 - 2)
         x1, y1 = min(dataset.RasterXSize, dx1 + 2), min(dataset.RasterYSize, dy1 + 2)
     width, height = x1 - x0, y1 - y0
-    limit = state['max_cells']
-    if width < 3 or height < 3 or width * height > limit:
-        raise ValueError(f'Khung xử lý cần từ 3 × 3 ô và tối đa {limit:,} ô. Hãy vẽ vùng nhỏ hơn.')
+    if width < 3 or height < 3:
+        raise ValueError('Khung xử lý cần ít nhất 3 × 3 ô để tính độ dốc.')
     if shutil.disk_usage(folder).free < width * height * 24 + 256 * 1024**2:
         raise ValueError('Ổ lưu tạm không đủ dung lượng cho vùng phân tích.')
     origin = gdal.ApplyGeoTransform(gt, x0, y0)
     cropped_gt = (origin[0], gt[1], gt[2], origin[1], gt[4], gt[5])
-    normalized = gdal.GetDriverByName('GTiff').Create(str(folder / 'elevation.tif'), width, height, 1, gdal.GDT_Float32, creation)
+    normalized = gdal.GetDriverByName('GTiff').Create(str(folder / 'elevation.tif'), width, height, 1, gdal.GDT_Float32, temporary_creation)
     normalized.SetGeoTransform(cropped_gt)
     normalized.SetProjection(crs.ExportToWkt())
     target_band = normalized.GetRasterBand(1)
@@ -754,16 +752,28 @@ def calculate(folder, state, notify):
     offset = 0 if offset is None else offset
     zfactor = 1 if state['source']['elevation_unit'] == 'm' else .3048
     original_nodata = band.GetNoDataValue()
-    for y in range(0, height, 256):
-        rows = min(256, height - y)
-        values = band.ReadAsArray(x0, y0 + y, width, rows).astype(np.float64)
-        valid = (band.GetMaskBand().ReadAsArray(x0, y0 + y, width, rows) != 0) & np.isfinite(values)
-        if original_nodata is not None:
-            valid &= values != original_nodata
-        values = (values * scale + offset) * zfactor
-        valid &= np.isfinite(values) & (np.abs(values) < np.finfo(np.float32).max)
-        target_band.WriteArray(np.where(valid, values, nodata).astype(np.float32), 0, y)
-        notify(5 + 20 * (y + rows) / height, 'Đang chuẩn hóa band cao độ và NoData…')
+    # Reuse the already verified footprint mask before touching elevation tiles.
+    # This avoids decoding the DEM again for entirely empty tiles in data mode.
+    source_mask_dataset = gdal.Open(str(folder / 'valid-data-mask.tif')) if region['mode'] == 'data' else None
+    source_mask = source_mask_dataset.GetRasterBand(1) if source_mask_dataset else band.GetMaskBand()
+    for y in range(0, height, block_size):
+        rows = min(block_size, height - y)
+        for x in range(0, width, block_size):
+            columns = min(block_size, width - x)
+            valid = source_mask.ReadAsArray(x0 + x, y0 + y, columns, rows) != 0
+            if valid.any():
+                values = band.ReadAsArray(x0 + x, y0 + y, columns, rows).astype(np.float64)
+                valid &= np.isfinite(values)
+                if original_nodata is not None:
+                    valid &= values != original_nodata
+                values = (values * scale + offset) * zfactor
+                valid &= np.isfinite(values) & (np.abs(values) < np.finfo(np.float32).max)
+                if valid.any():
+                    target_band.WriteArray(np.where(valid, values, nodata).astype(np.float32), x, y)
+            # Unwritten sparse TIFF blocks read back as the band's NoData value.
+            notify(5 + 20 * (y * width + rows * (x + columns)) / (width * height),
+                   'Đang chuẩn hóa band cao độ và NoData…')
+    source_mask = source_mask_dataset = band = None
     target_band = None
     normalized.FlushCache()
     dataset = None
@@ -779,37 +789,19 @@ def calculate(folder, state, notify):
         target_crs = osr.SpatialReference()
         target_crs.ImportFromEPSG((32600 if lat >= 0 else 32700) + min(60, max(1, int((lon + 180) // 6) + 1)))
         target_crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-        auto = gdal.AutoCreateWarpedVRT(normalized, None, target_crs.ExportToWkt(), gdal.GRA_Bilinear)
-        if auto.RasterXSize * auto.RasterYSize > limit:
-            raise ValueError('Lưới sau chuyển hệ chiếu quá lớn. Hãy chọn vùng nhỏ hơn.')
-        auto = None
         working = gdal.Warp(str(folder / 'projected.tif'), normalized, dstSRS=target_crs.ExportToWkt(),
                             resampleAlg='bilinear', srcNodata=nodata, dstNodata=nodata, outputType=gdal.GDT_Float32,
-                            creationOptions=creation, warpMemoryLimit=128, callback=lambda f, *_: notify(25 + f * 15, 'Đang chuyển DEM sang hệ chiếu mét…'))
+                            creationOptions=temporary_creation, warpMemoryLimit=128, callback=lambda f, *_: notify(25 + f * 15, 'Đang chuyển DEM sang hệ chiếu mét…'))
         reprojected = True
-    output = gdal.DEMProcessing(str(folder / 'slope.tif'), working, 'slope', format='GTiff', alg='Horn',
-                                slopeFormat='percent' if state['unit'] == 'percent' else 'degree', scale=1.0,
-                                computeEdges=False, creationOptions=creation,
-                                callback=lambda f, *_: notify(40 + f * 30, 'Đang tính độ dốc Horn…'))
-    output = None
-    output = gdal.Open(str(folder / 'slope.tif'), gdal.GA_Update)
+    output = gdal.GetDriverByName('GTiff').Create(str(folder / 'slope.tif'), working.RasterXSize,
+                                               working.RasterYSize, 1, gdal.GDT_Float32, creation)
+    output.SetGeoTransform(working.GetGeoTransform())
+    output.SetProjection(working.GetProjection())
+    output.GetRasterBand(1).SetNoDataValue(nodata)
     # Apply AOI only AFTER the neighborhood calculation.
     output_crs = target_crs
     aoi.Transform(osr.CoordinateTransformation(crs, output_crs))
-    mask = gdal.GetDriverByName('GTiff').Create(str(folder / 'mask.tif'), output.RasterXSize, output.RasterYSize, 1, gdal.GDT_Byte, ['TILED=YES', 'COMPRESS=DEFLATE'])
-    mask.SetGeoTransform(output.GetGeoTransform())
-    mask.SetProjection(output.GetProjection())
-    vector = ogr.GetDriverByName('Memory').CreateDataSource('aoi')
-    layer = vector.CreateLayer('aoi', output_crs, ogr.wkbUnknown)
-    feature = ogr.Feature(layer.GetLayerDefn())
-    feature.SetGeometry(aoi)
-    layer.CreateFeature(feature)
-    gdal.RasterizeLayer(mask, [1], layer, burn_values=[1])
-    mask.FlushCache()
-    mask = None
-    mask = gdal.Open(str(folder / 'mask.tif'), gdal.GA_ReadOnly)
     if region['mode'] == 'data':
-        mask = None
         transform = output.GetGeoTransform()
         bounds = [transform[0], transform[3] + transform[5] * output.RasterYSize,
                   transform[0] + transform[1] * output.RasterXSize, transform[3]]
@@ -818,49 +810,84 @@ def calculate(folder, state, notify):
                          width=output.RasterXSize, height=output.RasterYSize,
                          resampleAlg='near', srcNodata=0, dstNodata=0, outputType=gdal.GDT_Byte,
                          creationOptions=['TILED=YES', 'COMPRESS=DEFLATE'],
-                         callback=lambda fraction, *_: notify(70, 'Đang áp ranh giới dữ liệu DEM…'))
+                         callback=lambda fraction, *_: notify(40, 'Đang áp ranh giới dữ liệu DEM…'))
+    else:
+        mask = gdal.GetDriverByName('GTiff').Create(str(folder / 'mask.tif'), output.RasterXSize,
+            output.RasterYSize, 1, gdal.GDT_Byte, ['TILED=YES', 'COMPRESS=DEFLATE'])
+        mask.SetGeoTransform(output.GetGeoTransform())
+        mask.SetProjection(output.GetProjection())
+        vector = ogr.GetDriverByName('Memory').CreateDataSource('aoi')
+        layer = vector.CreateLayer('aoi', output_crs, ogr.wkbUnknown)
+        feature = ogr.Feature(layer.GetLayerDefn())
+        feature.SetGeometry(aoi)
+        layer.CreateFeature(feature)
+        gdal.RasterizeLayer(mask, [1], layer, burn_values=[1])
+        mask.FlushCache()
+        mask = None
+        mask = gdal.Open(str(folder / 'mask.tif'), gdal.GA_ReadOnly)
     count, total, squared, selected = 0, 0.0, 0.0, 0
     minimum, maximum = float('inf'), float('-inf')
-    bins = np.array(BREAKS[1:-1], dtype=float)
-    if state['unit'] == 'percent':
-        bins = np.tan(np.deg2rad(bins)) * 100
-    histogram = np.zeros(len(COLORS), dtype=np.int64)
     ob = output.GetRasterBand(1)
     result_nodata = ob.GetNoDataValue()
-    for y in range(0, output.RasterYSize, 256):
-        rows = min(256, output.RasterYSize - y)
-        values = ob.ReadAsArray(0, y, output.RasterXSize, rows)
-        inside = mask.GetRasterBand(1).ReadAsArray(0, y, output.RasterXSize, rows) != 0
-        valid = inside & np.isfinite(values) & (values != result_nodata)
-        ob.WriteArray(np.where(valid, values, result_nodata), 0, y)
-        v = values[valid].astype(np.float64)
-        selected += int(inside.sum())
-        if v.size:
-            count += int(v.size)
-            total += float(v.sum())
-            squared += float(np.square(v).sum())
-            minimum, maximum = min(minimum, float(v.min())), max(maximum, float(v.max()))
-            histogram += np.bincount(np.searchsorted(bins, v, side='right'), minlength=len(COLORS))
-        notify(70 + 15 * (y + rows) / output.RasterYSize, 'Đang thống kê các ô độ dốc hợp lệ…')
+    mask_band = mask.GetRasterBand(1)
+    working_band = working.GetRasterBand(1)
+    working_nodata = working_band.GetNoDataValue()
+    total_blocks = math.ceil(output.RasterXSize / block_size) * math.ceil(output.RasterYSize / block_size)
+    completed_blocks = computed_blocks = skipped_blocks = 0
+    for y in range(0, output.RasterYSize, block_size):
+        rows = min(block_size, output.RasterYSize - y)
+        for x in range(0, output.RasterXSize, block_size):
+            columns = min(block_size, output.RasterXSize - x)
+            inside = mask_band.ReadAsArray(x, y, columns, rows) != 0
+            selected += int(inside.sum())
+            # A one-cell halo preserves the same Horn neighborhoods at tile seams.
+            left, top = max(0, x - 1), max(0, y - 1)
+            right = min(output.RasterXSize, x + columns + 1)
+            bottom = min(output.RasterYSize, y + rows + 1)
+            values = None
+            if inside.any():
+                elevation = working_band.ReadAsArray(left, top, right - left, bottom - top)
+                wgt = working.GetGeoTransform()
+                origin = gdal.ApplyGeoTransform(wgt, left, top)
+                tile_transform = (origin[0], wgt[1], wgt[2], origin[1], wgt[4], wgt[5])
+                block = analysis.calculate_block(elevation, working_nodata, tile_transform, working.GetProjection())
+                if block is not None:
+                    values = block[y - top:y - top + rows, x - left:x - left + columns]
+                    if not np.any(values != working_nodata):
+                        values = None
+                    else:
+                        computed_blocks += 1
+            if values is None:
+                skipped_blocks += 1
+            else:
+                valid = inside & np.isfinite(values) & (values != result_nodata)
+                if valid.any():
+                    ob.WriteArray(np.where(valid, values, result_nodata), x, y)
+                    v = values[valid].astype(np.float64)
+                    count += int(v.size)
+                    total += float(v.sum())
+                    squared += float(np.square(v).sum())
+                    minimum, maximum = min(minimum, float(v.min())), max(maximum, float(v.max()))
+                    analysis.accumulate(v)
+            completed_blocks += 1
+            notify(40 + 45 * completed_blocks / total_blocks,
+                   f'Đang tính và thống kê {analysis_name} theo khối dữ liệu…')
     if not count:
-        raise ValueError('Vùng không có ô đủ dữ liệu 3 × 3 để tính độ dốc. Có thể chỉ chứa NoData hoặc vùng quá nhỏ.')
+        raise ValueError(f'Vùng không có ô đủ dữ liệu 3 × 3 để tính {analysis_name}. Có thể chỉ chứa NoData hoặc vùng quá nhỏ.')
     ob.SetUnitType('%' if state['unit'] == 'percent' else 'degree')
     ob.SetStatistics(minimum, maximum, total / count, math.sqrt(max(0, squared / count - (total / count)**2)))
-    output.SetMetadata({'METHOD': 'Horn 3x3', 'SLOPE_UNIT': state['unit'], 'SOURCE_TITLE': state['title'],
-                        'NODATA_POLICY': 'strict 3x3 neighborhood; AOI mask applied after slope'})
+    output.SetMetadata(analysis.metadata(state['title']))
     transform = output.GetGeoTransform()
     pixel_area = abs(transform[1] * transform[5] - transform[2] * transform[4])
-    classes = []
-    for i, color in enumerate(COLORS):
-        lower = BREAKS[i] if state['unit'] == 'degree' else math.tan(math.radians(BREAKS[i])) * 100
-        upper = BREAKS[i + 1] if state['unit'] == 'degree' else (math.tan(math.radians(BREAKS[i + 1])) * 100 if i < len(COLORS) - 1 else None)
-        classes.append({'min': lower, 'max': upper, 'color': color, 'count': int(histogram[i]),
-                        'percent': float(histogram[i]) / count * 100, 'area_m2': int(histogram[i]) * pixel_area})
-    report = {'method': 'Horn 3×3', 'unit': state['unit'], 'crs': f'EPSG:{output_crs.GetAuthorityCode(None)}' if output_crs.GetAuthorityCode(None) else output_crs.GetName(),
+    classes = analysis.classes(count, pixel_area)
+    report = {'crs': f'EPSG:{output_crs.GetAuthorityCode(None)}' if output_crs.GetAuthorityCode(None) else output_crs.GetName(),
               'resolution': [abs(transform[1]), abs(transform[5])], 'width': output.RasterXSize, 'height': output.RasterYSize,
               'valid_cells': count, 'selected_cells': selected, 'excluded_cells': selected - count,
               'valid_area_m2': count * pixel_area, 'min': minimum, 'max': maximum, 'mean': total / count,
-              'classes': classes, 'reprojected': reprojected}
+              'classes': classes, 'reprojected': reprojected,
+              'processing': {'block_size': block_size, 'computed_blocks': computed_blocks,
+                             'skipped_blocks': skipped_blocks, 'total_blocks': total_blocks}}
+    report.update(analysis.report_fields())
     output.FlushCache()
     # Small classified preview; downloadable GeoTIFF always keeps full resolution Float32.
     preview_crs = osr.SpatialReference()
@@ -876,9 +903,9 @@ def calculate(folder, state, notify):
                         callback=lambda f, *_: notify(85 + f * 12, 'Đang tạo ảnh xem trước…'))
     pixels = preview.GetRasterBand(1).ReadAsArray()
     valid = np.isfinite(pixels) & (pixels != result_nodata)
-    indices = np.searchsorted(bins, pixels, side='right')
+    indices = analysis.class_indices(pixels)
     rgba = gdal.GetDriverByName('MEM').Create('', pw, ph, 4, gdal.GDT_Byte)
-    palette = np.array([[int(c[n:n + 2], 16) for n in (1, 3, 5)] for c in COLORS], dtype=np.uint8)
+    palette = np.array([[int(c[n:n + 2], 16) for n in (1, 3, 5)] for c in colors], dtype=np.uint8)
     for channel in range(3):
         rgba.GetRasterBand(channel + 1).WriteArray(palette[indices, channel])
     rgba.GetRasterBand(4).WriteArray(valid.astype(np.uint8) * 255)
@@ -886,8 +913,8 @@ def calculate(folder, state, notify):
     gdal.GetDriverByName('PNG').CreateCopy(str(folder / 'preview.png'), rgba)
     report['preview_extent'] = bounds
     report['preview_crs'] = 'EPSG:3857'
-    (folder / 'report.txt').write_text(format_slope_report(report, state['title']), encoding='utf-8-sig')
-    ob = None
+    (folder / 'report.txt').write_text(format_analysis_report(report, state['title']), encoding='utf-8-sig')
+    ob = mask_band = working_band = None
     output = mask = working = normalized = None
     return report
 
@@ -917,7 +944,8 @@ def worker(folder):
         report = inspect_data_footprint(folder, state, notify) if is_footprint else calculate(folder, state, notify)
         notify(99, 'Đang hoàn tất kết quả…')
         state.update(status='ready', progress=100,
-                     message='Đã xác định ranh giới dữ liệu DEM.' if is_footprint else 'Đã tính xong độ dốc.', result=report)
+                     message='Đã xác định phạm vi.' if is_footprint else
+                         ('Đã tính xong hướng dốc.' if state['request'].get('operation') == 'aspect' else 'Đã tính xong độ dốc.'), result=report)
     except Exception as exc:
         cancelled = (folder / 'cancel').exists()
         state.update(status='cancelled' if cancelled else 'failed', message=str(exc)[:400] if isinstance(exc, (ValueError, InterruptedError)) else 'Không xử lý được raster. Kiểm tra dữ liệu, CRS hoặc dung lượng lưu trữ.')
@@ -937,7 +965,10 @@ def worker(folder):
 
 
 if __name__ == '__main__' and len(sys.argv) == 3:
-    if sys.argv[1] == '--validate-upload':
+    if sys.argv[1] == '--metadata':
+        from raster_metadata import read_raster_grid
+        print(json.dumps(read_raster_grid(sys.argv[2]), ensure_ascii=True, allow_nan=False))
+    elif sys.argv[1] == '--validate-upload':
         upload_worker(sys.argv[2])
     elif sys.argv[1] == '--worker':
         worker(sys.argv[2])

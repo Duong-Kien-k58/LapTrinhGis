@@ -438,10 +438,10 @@ npm run build
 `npm run build` tạo thư mục `temp/frontend-dist`. Để xem thử bản build, chạy
 `npm run preview`; backend, GeoServer và PostGIS vẫn cần chạy riêng.
 
-### Tải DEM tạm cho phân tích địa hình
+### Phân tích độ dốc và hướng dốc
 
-Trong **Phân tích địa hình → Phân tích độ dốc → Tệp từ máy**, chọn GeoTIFF,
-xác nhận loại DEM/DSM/DTM, band và đơn vị cao độ rồi bấm **Tải lên và kiểm tra**.
+Trong **Phân tích địa hình → Phân tích độ dốc → Tệp GeoTIFF**, chọn raster,
+chọn band (nếu có nhiều band) và đơn vị cao độ rồi bấm **Tải lên và kiểm tra**.
 Nếu GeoTIFF thiếu CRS, nhập mã EPSG của dữ liệu. Không đọc toàn bộ raster trong
 trình duyệt; GDAL kiểm tra band và tính thống kê ở tiến trình riêng trên backend.
 
@@ -454,16 +454,21 @@ trình duyệt; GDAL kiểm tra band và tính thống kê ở tiến trình ri�
 - Cấu hình `.env`: `DEM_GDAL_PYTHON` trỏ tới Python có GDAL; mặc định sử dụng
   `C:/Program Files/QGIS 3.40.3/bin/python3.exe`. Runtime QGIS được cách ly với
   Python của Django. Các giới hạn lưu trữ nằm trong `backend/backend/settings.py`.
-- Sau khi DEM sẵn sàng, có thể chọn toàn bộ DEM hoặc vẽ vùng phân tích trên
+- Tất cả lớp được quản lý chung trong **Dữ liệu raster**, không chia DEM/DSM/DTM hay loại ảnh.
+- Sau khi raster sẵn sàng, chọn **Theo ranh giới lớp** hoặc **Theo vùng cắt** trên
   bản đồ, xem diện tích/số ô ước tính và chọn đơn vị độ dốc, rồi bấm **Phân tích
   độ dốc**. Backend tính Horn 3×3, hỗ trợ độ và phần trăm, scale/offset của band
   và cao độ mét/feet. DEM tọa độ địa lý hoặc lưới xoay được chuyển sang UTM.
-- Lựa chọn **Theo vùng có dữ liệu DEM** có hai bước: bấm **Xác định ranh giới
-  DEM** để quét pixel hợp lệ và xem đường bao, sau đó bấm **Phân tích độ dốc**.
+- Lựa chọn **Theo ranh giới lớp** có hai bước: bấm **Xác định phạm vi** để
+  zoom tới toàn bộ khung raster, rồi quét pixel hợp lệ và xem đường bao.
+  Sau đó bấm **Phân tích**. **Theo vùng cắt** cho phép vẽ đa giác trong phạm vi lớp.
+  Thông tin lưới và hệ tọa độ được đọc trực tiếp từ GeoTIFF khi chọn lớp, kể cả
+  các lớp cấu hình sẵn chưa có metadata đầy đủ. Backend phải đang chạy ở cổng 8000.
   Đường bao giữ các phần rời và lỗ NoData; không tự lấy ranh giới hành chính.
   Backend cắt phần đệm trống ngoài vùng dữ liệu và dùng mask pixel chính xác.
   GeoTIFF vẫn có khung chữ nhật; vùng ngoài đường bao và ô không đủ hàng xóm
-  được giữ NoData. Giới hạn số ô vẫn áp dụng cho khung xử lý có vùng đệm.
+  được giữ NoData. Không giới hạn số ô; xử lý theo khối 1024×1024, bỏ qua
+  khối trống và gộp tính toán, thống kê, ghi kết quả trong cùng một lượt.
 - Kết quả gồm GeoTIFF Float32 đầy đủ độ phân giải, ảnh xem trước trên bản đồ 2D
   và báo cáo TXT tiếng Việt theo 7 cấp (0–3–8–15–25–35–45–90°; quy đổi tương ứng khi dùng %).
   Ảnh xem trước tối đa 1536 px, dùng lấy mẫu gần nhất; chỉ GeoTIFF là raster số
@@ -471,16 +476,32 @@ trình duyệt; GDAL kiểm tra band và tính thống kê ở tiến trình ri�
 - NoData, giá trị không hữu hạn và ô thiếu hàng xóm 3×3 bị loại. Có đọc thêm
   vùng đệm 2 ô trước khi tính rồi mới áp mặt nạ vùng chọn để tránh tạo biên giả.
   Chất lượng kết quả phụ thuộc DEM nguồn; thao tác này không lấp chỗ trống.
-- Tác vụ chạy nền bằng GDAL, có tiến trình/hủy; giới hạn mặc định 200 triệu ô,
-  30 phút/tác vụ, 2 tác vụ đồng thời trên máy chủ và 1 tác vụ/phiên. Có thể đặt
-  `SLOPE_MAX_CELLS` trong Django settings để thay giới hạn ô.
-- API `/mygis/slope-jobs/` nhận POST; `<uuid>/` nhận GET/DELETE; các đường dẫn
+- **Phân tích địa hình → Phân tích hướng dốc** dùng cùng bảng chọn DEM, tải tệp,
+  xác định vùng, tiến trình, hủy và xem kết quả 2D/3D. Hướng dốc chỉ dùng độ:
+  Bắc 0°, Đông 90°, Nam 180°, Tây 270°; bằng phẳng là −1, NoData là −9999.
+  Phép tính Aspect planar dùng cửa sổ 3×3 và trọng số theo
+  [công thức ArcMap](https://desktop.arcgis.com/en/arcmap/latest/tools/spatial-analyst-toolbox/how-aspect-works.htm):
+  ô trung tâm phải hợp lệ, có ít nhất 7 trong 8 ô lân cận hợp lệ; mép ngoài
+  raster là NoData. Đây là phương pháp planar theo Bắc lưới hệ chiếu.
+  Chú giải gồm 8 hướng và bằng phẳng; nhóm Bắc gộp hai khoảng qua 0°.
+  Thống kê dùng trung bình góc vòng, loại ô bằng phẳng khỏi trung bình;
+  không xác định trung bình nếu không có hướng hoặc các hướng triệt tiêu nhau.
+  GeoTIFF giữ góc thực, PNG xem trước và TXT giữ đúng phân nhóm hướng.
+- Tác vụ chạy nền, có tiến trình/hủy; tối đa 30 phút/tác vụ,
+  2 tác vụ đồng thời trên máy chủ và 1 tác vụ/phiên; vẫn kiểm tra dung lượng ổ đĩa.
+- API `/mygis/slope-jobs/` dùng chung cho độ dốc và hướng dốc, nhận POST với
+  `operation: "slope"`, `"aspect"` hoặc `"footprint"`; `<uuid>/` nhận GET/DELETE; các đường dẫn
   `geotiff/`, `preview/`, `report/` chỉ đọc được bởi phiên đã tạo tác vụ.
   Kết quả lưu 24 giờ trong `temp/slope-jobs/`; dọn bằng lệnh
   `python manage.py cleanup_dem_uploads` hoặc tự dọn khi tạo tác vụ mới.
-- Logic frontend nằm trong `frontend/src/tool/terrainAnalysisTool.js`. Backend
-  gom tải DEM, lưu trạng thái tạm, kiểm tra GeoTIFF, API, tính độ dốc và cả hai
-  worker vào `backend/mygis/slope_analysis.py` (không còn thư mục `mygis/dem/`).
+- Logic riêng được tách theo chức năng: backend `backend/mygis/slope.py`
+  chứa tính độ dốc, phân lớp và báo cáo; `backend/mygis/aspect.py` chứa tính
+  hướng dốc, phân hướng, thống kê góc vòng và báo cáo. Quy trình dùng chung
+  (tải DEM, kiểm tra GeoTIFF, chọn lưới, API, xử lý theo khối và worker) nằm
+  trong `backend/mygis/terrain_analysis.py`.
+- Frontend `frontend/src/tool/slopeTool.js` và `aspectTool.js` quản lý nội dung,
+  đơn vị, bảng thống kê và chú giải riêng. `terrainAnalysisTool.js` giữ bảng
+  thao tác, chọn vùng, tải DEM, theo dõi tác vụ và hiển thị 2D/3D dùng chung.
   Worker kiểm tra dùng `--validate-upload`, worker tính slope dùng `--worker`;
   cả hai vẫn chạy trong Python GDAL riêng, không cần nạp Django. DEM GeoServer
   hiện cần là kho GeoTIFF cục bộ mà backend đọc được, không nhận đường dẫn tùy ý

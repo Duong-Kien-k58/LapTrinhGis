@@ -1,0 +1,61 @@
+/* Phuoc Tan.style: Biên giới quốc gia / Địa giới tỉnh / Địa giới xã.
+   Simple solid boundaries adapted for satellite imagery. No polygon fill.
+   EPSG:3857 nominal z: country <7; province 7-11; commune >=11. */
+[role = 'line'][cap = 0] {
+  stroke: #ffffff;
+  stroke-width: 1.2;
+  stroke-opacity: 0.85;
+  stroke-dasharray: none;
+  stroke-linecap: round;
+  z-index: 3;
+}
+[role = 'line'][cap = 1][@sd < 6000000] {
+  stroke: #ffffff;
+  stroke-width: 0.9;
+  stroke-opacity: 0.85;
+  stroke-dasharray: none;
+  stroke-linecap: round;
+  z-index: 2;
+}
+[role = 'line'][cap = 2][@sd < 400000] {
+  stroke: #ffffff;
+  stroke-width: 0.65;
+  stroke-opacity: 0.7;
+  stroke-dasharray: none;
+  stroke-linecap: round;
+  z-index: 1;
+}
+[role = 'label'] {
+  font-family: 'Arial';
+  font-fill: #ffffff;
+  font-weight: bold;
+  halo-color: #202b35;
+  halo-radius: 1.6;
+  label-geometry: [centroid(geom)];
+  label-anchor: 0.5 0.5;
+  label-auto-wrap: 120;
+  label-conflict-resolution: true;
+  label-space-around: 18;
+  label-max-displacement: 0;
+  label-follow-line: false;
+
+}
+[role = 'label'][cap = 0][@sd >= 4000000] {
+  label: [ten]; font-size: 15; label-priority: 100;
+}
+[role = 'label'][cap = 1][@sd < 4000000][@sd >= 250000] {
+  label: [ten]; font-size: 13; label-priority: 80;
+}
+[role = 'label'][cap = 2][@sd < 250000] {
+  label: [ten]; font-size: 12; label-priority: 60;
+}
+
+/* Island attribution in this dataset: Viet Nam, Da Nang / Khanh Hoa. */
+[role = 'label'][cap = 2][ma = '20333'][@sd >= 250000][@sd < 20000000] {
+  label: [ten];
+  font-size: 13; label-priority: 120; label-auto-wrap: 150;
+}
+[role = 'label'][cap = 2][ma = '22736'][@sd >= 250000][@sd < 20000000] {
+  label: [ten];
+  font-size: 13; label-priority: 120; label-auto-wrap: 150;
+}

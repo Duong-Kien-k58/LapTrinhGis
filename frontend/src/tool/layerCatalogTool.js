@@ -20,15 +20,17 @@ export function selectCatalogLayers({ orderedLayers, selected, anchor, layer, to
 }
 
 export function migrateDemCatalogState(state) {
-  // Chỉ chuyển bố cục cũ; giữ các thao tác kéo thả đã lưu sau khi có nhóm DEM.
-  if (state.groups && !state.groups.dem && Array.isArray(state.groups.raster)) {
-    const demIds = new Set(RASTER_LAYER_CONFIGS.filter(config => config.group === 'dem').map(config => config.id));
-    state.groups.dem = state.groups.raster.filter(id => demIds.has(id));
-    state.groups.raster = state.groups.raster.filter(id => !demIds.has(id));
+  // Merge the previous elevation group into the single raster group once.
+  if (state.groups && Array.isArray(state.groups.dem)) {
+    state.groups.raster = [...new Set([...(state.groups.raster || []), ...state.groups.dem])];
+    delete state.groups.dem;
   }
-  if (Array.isArray(state.groupOrder) && !state.groupOrder.includes('dem')) {
-    const index = state.groupOrder.indexOf('raster');
-    state.groupOrder.splice(index < 0 ? state.groupOrder.length : index, 0, 'dem');
+  if (Array.isArray(state.groupOrder)) {
+    state.groupOrder = [...new Set(state.groupOrder.map(id => id === 'dem' ? 'raster' : id))];
+  }
+  if (state.visibility?.groups?.dem !== undefined) {
+    state.visibility.groups.raster = Boolean(state.visibility.groups.raster || state.visibility.groups.dem);
+    delete state.visibility.groups.dem;
   }
   return state;
 }

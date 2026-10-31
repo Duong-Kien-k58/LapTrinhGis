@@ -71,22 +71,22 @@ def serialize(raster):
     return {
         "id": raster.name,  # Dùng tên raster làm id phía frontend
         "name": raster.name,  # Tên kỹ thuật của raster
-        "title": raster.title,  # Tên hiển thị
+        "title": re.sub(r"^DEM\b", "Raster", raster.title, flags=re.IGNORECASE),  # Tên hiển thị
         "crs": raster.crs,  # Hệ tọa độ
         "bbox": raster.bbox,  # Phạm vi raster
         "width": raster.width,  # Số pixel chiều ngang
         "height": raster.height,  # Số pixel chiều dọc
         "source_filename": raster.source_filename,  # Tên file GeoTIFF gốc
-        "presentation_type": raster.presentation_type,  # Ảnh vệ tinh, ảnh hàng không, DEM hoặc chuyên đề
+        "presentation_type": "raster",
         "technical_metadata": raster.technical_metadata,  # Band, kiểu pixel và NoData
         "created_at": raster.created_at.isoformat(),
         "updated_at": raster.updated_at.isoformat(),
     }
 
-def read_metadata(request, fallback_name="", fallback_presentation_type=RasterMetadata.PresentationType.THEMATIC):
+def read_metadata(request, fallback_name="", fallback_presentation_type=RasterMetadata.PresentationType.RASTER):
     name = request.POST.get("name", fallback_name).strip()  # Lấy tên raster frontend gửi lên
     title = request.POST.get("title", name).strip()  # Lấy tên hiển thị, mặc định bằng name
-    presentation_type = request.POST.get("presentation_type", fallback_presentation_type).strip()
+    presentation_type = "raster"
     if name_error := validate_name(name):
         return None, name_error  # Dừng nếu tên không hợp lệ
     if not title:
@@ -229,7 +229,7 @@ def sync_raster_from_geoserver(request, raster_name):
     try:
         current_raster = RasterMetadata.objects.filter(name=raster_name).first()
         current_type = current_raster.presentation_type if current_raster else None
-        presentation_type = request.POST.get("presentation_type", current_type or RasterMetadata.PresentationType.THEMATIC).strip()
+        presentation_type = "raster"
         if presentation_error := validate_presentation_type(presentation_type):
             return error(presentation_error)
         store_name = raster_store(workspace, raster_name) or store_name
@@ -290,7 +290,7 @@ def update_raster_metadata(request, raster_name):
     metadata, metadata_error = read_metadata(
         request,
         raster_name,
-        current_type or RasterMetadata.PresentationType.THEMATIC,
+        current_type or RasterMetadata.PresentationType.RASTER,
     )
     if metadata_error:
         return error(metadata_error)

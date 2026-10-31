@@ -24,8 +24,7 @@ export const LAYER_GROUP_CONFIGS = [
   { id: 'administrative', title: 'Địa giới hành chính', fold: 'close' },
   { id: 'terrain', title: 'Địa hình', fold: 'close' },
   { id: 'land_cover', title: 'Phủ bề mặt', fold: 'close' },
-  { id: 'dem', title: 'DEM', fold: 'close', kind: 'raster' },
-  { id: 'raster', title: 'Ảnh vệ tinh', fold: 'close', kind: 'raster' },
+  { id: 'raster', title: 'Dữ liệu raster', fold: 'close', kind: 'raster' },
   { id: 'base', title: 'Bản đồ nền địa lý', fold: 'close', kind: 'base' }
 ];
 
@@ -87,7 +86,7 @@ export const MAP_LAYER_CONFIGS = [
     attributeTable: false,
     hasPopup: false,
     zIndex: 90,
-    style: { type: 'line', stroke: '#ffffff', width: 1.5 }
+    style: { type: 'line', stroke: '#ffffff', width: 1.2 }
   },
   //#region: Nhóm bản đồ nền
   //Nền biển
@@ -388,31 +387,19 @@ export const MAP_LAYER_CONFIGS = [
 // 5. CÁC LỚP RASTER
 // =========================================================
 export const RASTER_PRESENTATION_TYPES = [
-  { id: 'dem', title: 'DEM — Mô hình số độ cao' },
-  { id: 'dsm', title: 'DSM — Mô hình số bề mặt' },
-  { id: 'dtm', title: 'DTM — Mô hình số địa hình' },
-  { id: 'satellite', title: 'Ảnh vệ tinh' },
-  { id: 'aerial', title: 'Ảnh hàng không' },
-  { id: 'uav', title: 'Ảnh UAV' },
-  { id: 'thematic', title: 'Raster chuyên đề' },
+  { id: 'raster', title: 'Raster' },
 ];
 
-export const ELEVATION_RASTER_TYPES = new Set(['dem', 'dsm', 'dtm']);
-
-// Dùng chung bộ công cụ trình bày, giữ nguyên loại dữ liệu trong metadata.
-export function rasterPresentationGroup(type) {
-  if (ELEVATION_RASTER_TYPES.has(type)) return 'dem';
-  if (type === 'uav') return 'aerial';
-  return type || 'thematic';
+export function rasterPresentationGroup() {
+  return 'raster';
 }
 
 export const RASTER_LAYER_CONFIGS = [
-  // presentation_type: dem | dsm | dtm | satellite | aerial | uav | thematic.
-  // DSM/DTM chứa cao độ; uav ở đây chỉ ảnh, không mặc nhiên là dữ liệu cao độ.
+  // Tất cả lớp GeoTIFF được quản lý trong một nhóm raster.
   //Ảnh vệ tinh 25K
   {
     id: 'vn25k',
-    presentation_type: 'satellite',
+    presentation_type: 'raster',
     title: 'Dữ liệu nền VN25K',
     group: 'raster',
     layerName: 'fast_alpha',
@@ -423,9 +410,9 @@ export const RASTER_LAYER_CONFIGS = [
   //DEM việt nam 30m
   {
     id: 'dem_vietnam',
-    presentation_type: 'dem',
-    title: 'DEM Việt Nam (SRTM 30 m)',
-    group: 'dem',
+    presentation_type: 'raster',
+    title: 'Raster Việt Nam (SRTM 30 m)',
+    group: 'raster',
     layerName: 'SRTM_30_VN_UTM',
     visible: false,
     format: 'image/png',
@@ -472,9 +459,9 @@ export const RASTER_LAYER_CONFIGS = [
     ['vinh_long', 'Vĩnh Long'],
   ].map(([province, title]) => ({
     id: `dem_${province}`,
-    title: `DEM 10 m — ${title}`,
-    presentation_type: 'dem',
-    group: 'dem',
+    title: `Raster 10 m — ${title}`,
+    presentation_type: 'raster',
+    group: 'raster',
     layerName: `dem_${province}`,
     visible: false,
     format: 'image/png',

@@ -20,6 +20,7 @@ const PALETTES = {
 }
 
 const SECTION_CONFIG = {
+  'raster-style': { kind: 'raster', rasterType: 'raster', title: 'Trình bày raster' },
   'vector-point': { kind: 'vector', geometry: 'Point', title: 'Trình bày dữ liệu điểm' },
   'vector-line': { kind: 'vector', geometry: 'LineString', title: 'Trình bày dữ liệu đường' },
   'vector-polygon': { kind: 'vector', geometry: 'Polygon', title: 'Trình bày dữ liệu vùng' },
@@ -28,6 +29,12 @@ const SECTION_CONFIG = {
   'raster-aerial': { kind: 'raster', rasterType: 'aerial', title: 'Trình bày ảnh hàng không' },
   'raster-dem': { kind: 'raster', rasterType: 'dem', title: 'Trình bày dữ liệu DEM' },
   'raster-thematic': { kind: 'raster', rasterType: 'thematic', title: 'Trình bày raster chuyên đề' },
+}
+
+function rasterUsesColorMap(definition, layer) {
+  if (definition.rasterType !== 'raster') return COLOR_MAPPED_RASTER_TYPES.has(definition.rasterType)
+  const metadata = layer?.get('rasterMetadata') || {}
+  return Number(metadata.technical_metadata?.band_count ?? metadata.band_count) === 1
 }
 
 function escapeXml(value) {
@@ -311,7 +318,7 @@ export function createLayerStyleTool({ thematicGroups, rasterGroup, rasterGroups
         <label>${widthLabel}<input data-width type="number" min="0.5" max="12" step="0.5" value="2"></label>
         <label>Kiểu đường<select data-dash><option value="solid">Nét liền</option><option value="8 5">Nét đứt</option><option value="2 4">Nét chấm</option></select></label>`
     } else {
-      const hasColorMap = COLOR_MAPPED_RASTER_TYPES.has(currentDefinition.rasterType)
+      const hasColorMap = rasterUsesColorMap(currentDefinition, currentLayer())
       const range = rasterRange(layer)
       const rasterStyleFields = hasColorMap ? `
         <label>Giá trị nhỏ nhất<input data-min type="number" value="${range.min}"></label>
@@ -388,7 +395,7 @@ export function createLayerStyleTool({ thematicGroups, rasterGroup, rasterGroups
       return
     }
     if (currentDefinition.kind === 'raster') {
-      const hasColorMap = COLOR_MAPPED_RASTER_TYPES.has(currentDefinition.rasterType)
+      const hasColorMap = rasterUsesColorMap(currentDefinition, currentLayer())
       const visual = document.createElement('div')
       visual.className = `layer-style-raster-visual${hasColorMap ? '' : ' original'}`
       visual.style.opacity = state.opacity
@@ -509,7 +516,7 @@ export function createLayerStyleTool({ thematicGroups, rasterGroup, rasterGroups
       } else if (currentDefinition.kind === 'vector') {
         sld = buildSimpleVectorSld(layer, currentDefinition.geometry, state)
       } else {
-        sld = buildRasterSld(layer, state, COLOR_MAPPED_RASTER_TYPES.has(currentDefinition.rasterType))
+        sld = buildRasterSld(layer, state, rasterUsesColorMap(currentDefinition, currentLayer()))
       }
       await validateSld(layer, sld)
       if (version !== applyVersion) return
@@ -604,7 +611,7 @@ export function createLayerStyleTool({ thematicGroups, rasterGroup, rasterGroups
         ? buildThematicVectorSld(layer, config?.type || 'Polygon', saved, saved.classes)
         : definition.kind === 'vector'
           ? buildSimpleVectorSld(layer, definition.geometry, saved)
-          : buildRasterSld(layer, saved, COLOR_MAPPED_RASTER_TYPES.has(definition.rasterType))
+          : buildRasterSld(layer, saved, rasterUsesColorMap(definition, layer))
       setLayerStyle(layer, sld, saved)
       sessionStyles.set(getLayerName(layer), saved)
     } catch {

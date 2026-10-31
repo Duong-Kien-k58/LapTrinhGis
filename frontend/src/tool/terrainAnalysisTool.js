@@ -1,6 +1,7 @@
-// Điểm quản lý frontend của slope: hiển thị 2D/3D, chọn vùng, tải DEM,
-// gọi API phân tích, theo dõi tác vụ và tải kết quả đều nằm trong file này.
-// main.js chỉ khởi tạo và mở/đóng công cụ; các import dùng tiện ích chung.
+// Quy trình chung: tải raster, chọn vùng, tác vụ và hiển thị bản đồ 2D/3D.
+// Nội dung riêng của mỗi chức năng nằm trong slopeTool.js và aspectTool.js.
+import { slopeTool } from './slopeTool.js';
+import { aspectTool } from './aspectTool.js';
 import { createToolPanel } from './toolUtils.js';
 import { requestJson } from './apiClient.js';
 import Draw from 'ol/interaction/Draw.js';
@@ -19,7 +20,9 @@ import { getCesiumScene, getOLCesium, is3DEnabled, pickTerrain } from './cesiumT
 import * as Cesium from 'cesium';
 import ImageLayer from 'ol/layer/Image.js';
 import ImageStatic from 'ol/source/ImageStatic.js';
-import { GEOSERVER_CONFIG, ELEVATION_RASTER_TYPES } from '../config/layers.js';
+import { GEOSERVER_CONFIG } from '../config/layers.js';
+
+const ANALYSIS_TOOLS = { slope: slopeTool, aspect: aspectTool };
 
 // The preview pixels are Web Mercator, so a geographic single-image provider
 // would stretch their latitude positions. Keep the native projection in 3D.
@@ -41,7 +44,7 @@ export function createSlopeImageryProvider(image, extent) {
   };
 }
 
-// Kiểm tra hình học và ước tính khối lượng từ lưới DEM, chưa đọc giá trị pixel.
+// Kiểm tra hình học và ước tính khối lượng từ lưới raster, chưa đọc giá trị pixel.
 export function inspectSlopeRegion(ring, metadata) {
   if (!Array.isArray(ring) || ring.length < 4 || ring.some(point => !Array.isArray(point) || point.length < 2 || !point.slice(0, 2).every(Number.isFinite))) {
     throw new Error('Vùng phân tích cần ít nhất 3 đỉnh hợp lệ.');
@@ -60,7 +63,7 @@ export function inspectSlopeRegion(ring, metadata) {
   }
   const bbox = metadata.bbox;
   if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every(Number.isFinite) || !(bbox[2] > bbox[0] && bbox[3] > bbox[1]) || !(metadata.width > 0 && metadata.height > 0)) {
-    throw new Error('DEM chưa có thông tin lưới và phạm vi hợp lệ.');
+    throw new Error('raster chưa có thông tin lưới và phạm vi hợp lệ.');
   }
   let clipped = points;
   for (const [axis, boundary, sign] of [[0, bbox[0], 1], [0, bbox[2], -1], [1, bbox[1], 1], [1, bbox[3], -1]]) {
@@ -87,7 +90,7 @@ export function inspectSlopeRegion(ring, metadata) {
   };
   const inputArea = area(points), clippedArea = area(clipped);
   if (!inputArea) throw new Error('Vùng phân tích không có diện tích.');
-  if (!clippedArea) throw new Error('Vùng chọn không giao với phạm vi DEM.');
+  if (!clippedArea) throw new Error('Vùng chọn không giao với phạm vi raster.');
   const dx = (bbox[2] - bbox[0]) / metadata.width, dy = (bbox[3] - bbox[1]) / metadata.height;
   const xs = clipped.map(p => p[0]), ys = clipped.map(p => p[1]);
   const columnStart = Math.max(0, Math.floor((Math.min(...xs) - bbox[0]) / dx));
@@ -98,17 +101,25 @@ export function inspectSlopeRegion(ring, metadata) {
     windowCells: (columnEnd - columnStart) * (rowEnd - rowStart), partial: clippedArea < inputArea * (1 - 1e-9) };
 }
 
-// DEM tạm chỉ phục vụ phân tích; không tự xuất bản lên GeoServer.
+// raster tạm chỉ phục vụ phân tích; không tự xuất bản lên GeoServer.
 export function createTerrainAnalysisTool({ map }) {
-  // Chỉ main.js khởi tạo công cụ; toàn bộ luồng độ dốc nằm trong file này.
+  let analysisType = 'slope';
+  const analysisDefinition = () => ANALYSIS_TOOLS[analysisType];
+  const analysisLabel = () => analysisDefinition().label;
+  const rasterGridCache = new Map();
+  let rasterGridVersion = 0;
+  let rasterGridLoading = false;
+  let rasterGridError = '';
+  // Chỉ main.js khởi tạo công cụ dùng chung.
   function getDemLayers() {
     const dems = new Map();
     const collect = layer => {
       if (layer.getLayers) layer.getLayers().forEach(collect);
       const raw = layer.get('rasterMetadata');
       const metadata = raw ? { ...raw.technical_metadata, ...raw } : null;
-      if (ELEVATION_RASTER_TYPES.has(metadata?.presentation_type) && metadata.name && !metadata.is_deleted) {
-        dems.set(metadata.name, { name: metadata.name, title: layer.get('title') || metadata.title || metadata.name, metadata });
+      if (metadata?.name && !metadata.is_deleted && layer.get('rasterName')) {
+        dems.set(metadata.name, { name: metadata.name, title: layer.get('title') || metadata.title || metadata.name,
+          metadata: { ...metadata, ...rasterGridCache.get(metadata.name) } });
       }
     };
     map.getLayers().forEach(collect);
@@ -116,57 +127,54 @@ export function createTerrainAnalysisTool({ map }) {
   }
   const panel = createToolPanel({
     id: 'terrain-analysis-panel',
-    title: 'Phân tích độ dốc',
+    title: `Phân tích ${analysisLabel()}`,
     content: `
-      <div class="terrain-analysis-heading"><span>01</span><strong>Chọn DEM đầu vào</strong></div>
-      <div class="terrain-source-options" role="group" aria-label="Nguồn DEM">
+      <div class="terrain-source-options" role="group" aria-label="Nguồn raster">
         <button type="button" data-dem-source="server" aria-pressed="true">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5"/></svg>
-          <span>DEM có sẵn<small>Trên GeoServer</small></span>
+          <span>Lớp có sẵn</span>
         </button>
         <button type="button" data-dem-source="file" aria-pressed="false">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8ZM14 2v6h6M12 18v-7m-3 3 3-3 3 3"/></svg>
-          <span>Tệp từ máy<small>GeoTIFF .tif, .tiff</small></span>
+          <span>Tệp GeoTIFF</span>
         </button>
       </div>
       <div data-dem-server>
-        <label for="terrain-dem-layer">Lớp DEM<select id="terrain-dem-layer"></select></label>
-        <p class="tool-hint">Các lớp cao độ: DEM, DSM và DTM.</p>
-        <label data-server-unit-row hidden>Đơn vị cao độ của DEM<select data-server-unit><option value="m">Mét (m)</option><option value="ft">Feet (ft)</option></select><small class="tool-hint">Lớp chưa khai báo đơn vị. Hãy chọn theo dữ liệu gốc.</small></label>
+        <label for="terrain-dem-layer">Lớp raster<select id="terrain-dem-layer"></select></label>
+        <label data-server-unit-row hidden>Đơn vị cao độ<select data-server-unit><option value="m">Mét (m)</option><option value="ft">Feet (ft)</option></select></label>
       </div>
       <div data-dem-file hidden>
-        <label for="terrain-dem-file">Tệp DEM<input id="terrain-dem-file" type="file" accept=".tif,.tiff"></label>
-        <p class="tool-hint" data-upload-limit>Đang lấy giới hạn tải lên…</p>
+        <label for="terrain-dem-file">Raster đầu vào<input id="terrain-dem-file" type="file" accept=".tif,.tiff"></label>
+        <p class="tool-hint" data-upload-limit></p>
         <dl class="dem-file-metadata" data-file-metadata hidden></dl>
         <div class="dem-upload-options" data-upload-options hidden>
-          <label>Loại dữ liệu<select data-dem-type><option value="dem">DEM</option><option value="dsm">DSM</option><option value="dtm">DTM</option></select></label>
-          <label>Band cao độ<select data-dem-band></select></label>
-          <label>Đơn vị cao độ<select data-dem-unit><option value="">Chọn đơn vị…</option><option value="m">Mét (m)</option><option value="ft">Feet (ft)</option></select></label>
+          <input data-dem-type type="hidden" value="raster">
+          <label data-band-row hidden>Band cao độ<select data-dem-band></select></label>
+          <label>Đơn vị cao độ<select data-dem-unit><option value="m">Mét (m)</option><option value="ft">Feet (ft)</option></select></label>
           <label data-crs-row hidden>Mã EPSG của tệp<input data-dem-epsg type="number" min="1" max="1000000" placeholder="Ví dụ: 32648"></label>
-          <label class="dem-elevation-confirm"><input data-confirm-elevation type="checkbox">Tôi xác nhận band đã chọn chứa cao độ.</label>
-          <div class="dem-upload-progress" hidden><progress max="100" value="0" aria-label="Tiến trình tải DEM"></progress><span></span></div>
+          <input data-confirm-elevation type="checkbox" checked hidden>
+          <div class="dem-upload-progress" hidden><progress max="100" value="0" aria-label="Tiến trình tải raster"></progress><span></span></div>
           <div class="dem-upload-actions"><button type="button" data-upload-dem disabled>Tải lên và kiểm tra</button><button type="button" class="secondary" data-cancel-dem hidden>Hủy</button></div>
         </div>
       </div>
       <p class="terrain-dem-selection" role="status" aria-live="polite"></p>
       <fieldset class="slope-region" data-slope-region disabled>
-        <legend class="terrain-analysis-heading"><span>02</span><strong>Chọn vùng phân tích</strong></legend>
-        <label class="slope-region-option"><input type="radio" name="slope-region-mode" value="full">Toàn bộ khung DEM</label>
-        <label class="slope-region-option"><input type="radio" name="slope-region-mode" value="data" checked>Theo vùng có dữ liệu DEM</label>
-        <label class="slope-region-option"><input type="radio" name="slope-region-mode" value="polygon">Tự vẽ vùng phân tích</label>
-        <div class="dem-upload-actions"><button type="button" class="secondary" data-region-zoom>Xem phạm vi DEM</button><button type="button" data-region-draw hidden>Vẽ vùng</button></div>
+        <legend>Phạm vi phân tích</legend>
+        <label class="slope-region-option"><input type="radio" name="slope-region-mode" value="data" checked>Theo ranh giới lớp</label>
+        <label class="slope-region-option"><input type="radio" name="slope-region-mode" value="polygon">Theo vùng cắt</label>
+        <div class="dem-upload-actions"><button type="button" class="secondary" data-region-zoom>Đến lớp</button><button type="button" data-region-draw hidden>Vẽ vùng cắt</button></div>
         <div class="dem-upload-actions" data-drawing-actions hidden><button type="button" data-region-finish>Hoàn tất</button><button type="button" class="secondary" data-region-undo>Bỏ đỉnh cuối</button><button type="button" class="secondary" data-region-cancel>Hủy vẽ</button></div>
-        <p class="tool-hint" data-region-status role="status" aria-live="polite">Chọn DEM để xác định vùng phân tích.</p>
+        <p class="tool-hint" data-region-status role="status" aria-live="polite"></p>
         <dl class="dem-file-metadata" data-region-summary hidden></dl>
-        <label>Đơn vị độ dốc<select data-slope-unit><option value="degree">Độ (°)</option><option value="percent">Phần trăm (%)</option></select></label>
+        <label data-analysis-unit-row><span data-analysis-unit-label>Đơn vị ${analysisLabel()}</span><select data-slope-unit>${analysisDefinition().units.map(unit => `<option value="${unit.value}">${unit.label}</option>`).join('')}</select></label>
       </fieldset>
       <div class="terrain-analysis-footer">
-        <p id="terrain-analysis-note" class="tool-hint">Horn 3 × 3 · Bỏ ô NoData và ô thiếu hàng xóm. Tối đa 200 triệu ô/khung xử lý.</p>
-        <button type="button" data-run-slope disabled aria-describedby="terrain-analysis-note">Phân tích độ dốc</button>
-        <div data-slope-progress hidden><progress max="100" value="0" aria-label="Tiến trình tính độ dốc"></progress><p role="status" aria-live="polite" data-slope-status></p><button type="button" class="secondary" data-cancel-slope>Hủy phân tích</button></div>
+        <p id="terrain-analysis-note" class="tool-hint" hidden>${analysisDefinition().note}</p>
+        <button type="button" data-run-slope disabled aria-describedby="terrain-analysis-note">Phân tích</button>
+        <div data-slope-progress hidden><progress max="100" value="0" aria-label="Tiến trình tính ${analysisLabel()}"></progress><p role="status" aria-live="polite" data-slope-status></p><button type="button" class="secondary" data-cancel-slope>Hủy phân tích</button></div>
       </div>
-      <section data-slope-result hidden aria-label="Kết quả độ dốc">
-        <div class="terrain-analysis-heading"><span>03</span><strong>Kết quả độ dốc</strong></div>
+      <section data-slope-result hidden aria-label="Kết quả ${analysisLabel()}">
+        <div class="terrain-analysis-heading"><strong data-analysis-result-heading>Kết quả ${analysisLabel()}</strong></div>
         <p class="tool-hint" data-result-title></p>
         <dl class="dem-file-metadata" data-result-summary></dl>
         <div data-slope-legend></div>
@@ -175,11 +183,13 @@ export function createTerrainAnalysisTool({ map }) {
         <button type="button" class="secondary" data-hide-slope>Ẩn lớp kết quả</button>
       </section>
       <div class="terrain-stop-bar">
-        <button type="button" class="secondary" data-stop-analysis>Dừng phân tích</button>
+        <button type="button" class="secondary" data-stop-analysis>Kết thúc phân tích</button>
       </div>
       <style>
         #terrain-analysis-panel.shown { display:flex; flex-direction:column; overflow:hidden; }
         #terrain-analysis-panel .tool-panel-header { flex-shrink:0; }
+        #terrain-analysis-panel .terrain-source-options button { min-height:44px; padding:8px 10px; }
+        #terrain-analysis-panel .terrain-source-options svg { width:18px; height:18px; }
         #terrain-analysis-panel .tool-panel-body { min-height:0; overflow:auto; }
         #terrain-analysis-panel .terrain-stop-bar { flex-shrink:0; padding:12px 16px; border-top:1px solid #ffffff14; background:#1c3440; }
         #terrain-analysis-panel [data-stop-analysis] { width:100%; color:#ffb0b8; border-color:#925568; }
@@ -222,7 +232,7 @@ export function createTerrainAnalysisTool({ map }) {
   let busy = false;
   let controller = null;
   let fileVersion = 0;
-  let fileMessage = 'Chưa chọn tệp DEM.';
+  let fileMessage = 'Chưa chọn tệp raster.';
   let fileError = false;
   let source = 'server';
   let demChoices = [];
@@ -268,7 +278,7 @@ export function createTerrainAnalysisTool({ map }) {
     const bridge = getOLCesium(), scene = getCesiumScene();
     if (!bridge || !scene || !is3DEnabled()) return;
     if (!region3D) {
-      region3D = new Cesium.CustomDataSource('Vùng phân tích độ dốc');
+      region3D = new Cesium.CustomDataSource('Vùng phân tích địa hình');
       bridge.getDataSources().add(region3D);
     }
     region3D.show = regionLayer.getVisible();
@@ -340,7 +350,7 @@ export function createTerrainAnalysisTool({ map }) {
       if (version !== result3DVersion) return;
       loading3DJob = null;
       slopeProgress.hidden = false;
-      slopeStatus.textContent = 'Không tải được ảnh độ dốc 3D. Bấm Xem kết quả để thử lại.';
+      slopeStatus.textContent = `Không tải được ảnh ${analysisLabel()} 3D. Bấm Xem kết quả để thử lại.`;
     };
     image.src = slopeUrl(job.files.preview);
   }
@@ -393,7 +403,7 @@ export function createTerrainAnalysisTool({ map }) {
 
   function updateRegion() {
     runSlopeButton.disabled = true;
-    runSlopeButton.textContent = 'Phân tích độ dốc';
+    runSlopeButton.textContent = 'Phân tích';
     const input = activeDem();
     const metadata = input?.metadata;
     panel.querySelector('[data-server-unit-row]').hidden = source !== 'server' || !input || ['m', 'ft'].includes(metadata.elevation_unit);
@@ -412,17 +422,23 @@ export function createTerrainAnalysisTool({ map }) {
     if (resultJob) panel.querySelector('[data-result-title]').textContent = `${resultJob.title} · Kết quả lần chạy trước`;
     drawButton.hidden = regionMode !== 'polygon';
     drawButton.disabled = false;
-    drawButton.textContent = drawnGeometry ? 'Vẽ lại vùng' : 'Vẽ vùng';
+    drawButton.textContent = drawnGeometry ? 'Vẽ lại vùng cắt' : 'Vẽ vùng cắt';
     if (drawing) return;
     regionSource.clear();
+    if (source === 'server' && (rasterGridLoading || rasterGridError)) {
+      regionBox.disabled = true;
+      regionStatus.textContent = rasterGridLoading ? 'Đang đọc phạm vi raster…' : rasterGridError;
+      regionStatus.classList.toggle('error', Boolean(rasterGridError));
+      return;
+    }
     if (!input) {
-      regionStatus.textContent = source === 'file' ? 'Tải lên và kiểm tra DEM trước khi chọn vùng.' : 'Chọn DEM để xác định vùng phân tích.';
+      regionStatus.textContent = '';
       return;
     }
     try {
       if (!getProjection(metadata.crs) && metadata.crs_wkt) { proj4.defs(metadata.crs, metadata.crs_wkt); register(proj4); }
-      if (!getProjection(metadata.crs)) throw new Error('Chưa hỗ trợ hệ tọa độ của DEM này.');
-      if (!Array.isArray(metadata.bbox) || metadata.bbox.length !== 4 || !metadata.bbox.every(Number.isFinite)) throw new Error('DEM chưa có metadata phạm vi. Hãy tải lại danh sách DEM.');
+      if (!getProjection(metadata.crs)) throw new Error('Chưa đọc được hệ tọa độ raster. Chọn lại lớp để thử lại.');
+      if (!Array.isArray(metadata.bbox) || metadata.bbox.length !== 4 || !metadata.bbox.every(Number.isFinite)) throw new Error('Raster chưa có thông tin phạm vi. Chọn lại lớp để thử lại.');
       const boundary = fromExtent(metadata.bbox).transform(metadata.crs, map.getView().getProjection());
       const boundaryFeature = new Feature(boundary);
       boundaryFeature.set('boundary', regionMode !== 'full');
@@ -431,11 +447,11 @@ export function createTerrainAnalysisTool({ map }) {
         const dem = input.source === 'upload' ? { source: 'upload', id: input.id }
           : { source: 'geoserver', name: input.name, elevation_unit: metadata.elevation_unit || panel.querySelector('[data-server-unit]').value };
         if (dataFootprint && (dataFootprint.expires_at * 1000 <= Date.now() || JSON.stringify(dataFootprint.dem) !== JSON.stringify(dem))) dataFootprint = null;
-        panel.slopeRequest = { dem, region: { mode: 'data' }, method: 'Horn', unit: panel.querySelector('[data-slope-unit]').value };
+        panel.slopeRequest = { dem, region: { mode: 'data' }, method: 'Horn', unit: panel.querySelector('[data-slope-unit]').value, operation: analysisType };
         if (!dataFootprint) {
           panel.slopeRequest.operation = 'footprint';
-          runSlopeButton.textContent = 'Xác định ranh giới DEM';
-          regionStatus.textContent = 'Bấm Xác định ranh giới DEM để quét vùng có cao độ hợp lệ. Khung nét đứt chỉ là phạm vi tệp; vùng NoData không được chọn.';
+          runSlopeButton.textContent = 'Xác định phạm vi';
+          regionStatus.textContent = 'Xác định phạm vi trước khi phân tích.';
         } else {
           const geometry = new GeoJSON().readGeometry(dataFootprint.result.geometry, {
             dataProjection: 'EPSG:4326', featureProjection: map.getView().getProjection(),
@@ -447,21 +463,19 @@ export function createTerrainAnalysisTool({ map }) {
           for (const [label, value] of [
             ['Diện tích có dữ liệu', `${(dataFootprint.result.area_m2 / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} km²`],
             ['Số ô có dữ liệu', dataFootprint.result.valid_cells.toLocaleString('vi-VN')],
-            ['Số ô khung xử lý (gồm vùng đệm)', dataFootprint.result.window_cells.toLocaleString('vi-VN')],
           ]) {
             const row = document.createElement('div'), term = document.createElement('dt'), definition = document.createElement('dd');
             term.textContent = label; definition.textContent = value; row.append(term, definition); regionSummary.append(row);
           }
           regionSummary.hidden = false;
-          regionStatus.textContent = 'Đã chọn đúng vùng có cao độ hợp lệ, giữ các phần rời và lỗ NoData. Các ô thiếu hàng xóm 3 × 3 vẫn bị loại khi tính slope.';
+          regionStatus.textContent = 'Phạm vi đã sẵn sàng.';
         }
+        if (resultJob) panel.querySelector('[data-result-title]').textContent = `${resultJob.title} · ${resultRequestKey === JSON.stringify(panel.slopeRequest) ? 'Kết quả của lựa chọn hiện tại' : 'Kết quả lần chạy trước'}`;
         runSlopeButton.disabled = busy || slopeBusy;
         return;
       }
       if (regionMode === 'polygon' && !drawnGeometry) {
-        regionStatus.textContent = is3DEnabled()
-          ? 'Bấm Vẽ vùng, chọn ít nhất 3 đỉnh trên địa hình. Chuột phải / Enter / Hoàn tất để kết thúc.'
-          : 'Bấm Vẽ vùng, chọn ít nhất 3 đỉnh. Nhấp đúp hoặc bấm Hoàn tất để kết thúc.';
+        regionStatus.textContent = 'Vẽ vùng cắt với ít nhất 3 đỉnh.';
         return;
       }
       const geometry = regionMode === 'full' ? fromExtent(metadata.bbox) : drawnGeometry.clone().transform(map.getView().getProjection(), metadata.crs);
@@ -472,16 +486,15 @@ export function createTerrainAnalysisTool({ map }) {
       for (const [label, value] of [
         ['Diện tích giao (ước tính)', area >= 1e6 ? `${(area / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} km²` : `${area.toLocaleString('vi-VN', { maximumFractionDigits: 0 })} m²`],
         ['Số ô trong vùng (ước tính)', result.cells.toLocaleString('vi-VN')],
-        ['Số ô khung xử lý', result.windowCells.toLocaleString('vi-VN')],
       ]) {
         const row = document.createElement('div'), term = document.createElement('dt'), definition = document.createElement('dd');
         term.textContent = label; definition.textContent = value; row.append(term, definition); regionSummary.append(row);
       }
       regionSummary.hidden = false;
-      regionStatus.textContent = `${result.partial ? 'Vùng chọn chỉ giao một phần DEM; sẽ chỉ tính phần có giao. ' : 'Đã xác định vùng phân tích. '}Các ô NoData sẽ được kiểm tra ở bước xử lý.${result.windowCells > 100000000 ? ' Khung xử lý lớn, nên vẽ vùng nhỏ hơn.' : ''}`;
+      regionStatus.textContent = result.partial ? 'Chỉ phân tích phần giao với raster.' : 'Vùng cắt đã sẵn sàng.';
       panel.slopeRequest = { dem: input.source === 'upload' ? { source: 'upload', id: input.id } : { source: 'geoserver', name: input.name, elevation_unit: metadata.elevation_unit || panel.querySelector('[data-server-unit]').value },
         region: regionMode === 'full' ? { mode: 'full' } : { mode: 'polygon', geometry: new GeoJSON().writeGeometryObject(geometry, { featureProjection: metadata.crs, dataProjection: 'EPSG:4326' }), crs: 'EPSG:4326' },
-        unit: panel.querySelector('[data-slope-unit]').value, method: 'Horn' };
+        unit: panel.querySelector('[data-slope-unit]').value, method: 'Horn', operation: analysisType };
       runSlopeButton.disabled = busy || slopeBusy;
       if (resultJob) panel.querySelector('[data-result-title]').textContent = `${resultJob.title} · ${resultRequestKey === JSON.stringify(panel.slopeRequest) ? 'Kết quả của lựa chọn hiện tại' : 'Kết quả lần chạy trước'}`;
     } catch (error) {
@@ -493,7 +506,7 @@ export function createTerrainAnalysisTool({ map }) {
   }
 
   function showAnalysis() {
-    document.dispatchEvent(new CustomEvent('webgis-tool-activate', { detail: { name: 'terrain-slope' } }));
+    document.dispatchEvent(new CustomEvent('webgis-tool-activate', { detail: { name: `terrain-${analysisType}` } }));
     panel.classList.add('shown');
     regionLayer.setVisible(true);
     syncRegion3D();
@@ -600,10 +613,7 @@ export function createTerrainAnalysisTool({ map }) {
     updateRegion();
     const input = activeDem();
     if (!input || regionStatus.classList.contains('error')) return;
-    if (regionMode === 'data' && dataFootprint) {
-      const geometry = new GeoJSON().readGeometry(dataFootprint.result.geometry);
-      fitAnalysisExtent(geometry.getExtent(), 'EPSG:4326');
-    } else fitAnalysisExtent(input.metadata.bbox, input.metadata.crs);
+    fitAnalysisExtent(input.metadata.bbox, input.metadata.crs);
   });
   panel.addEventListener('toolpanelclose', () => { stopDrawing(); regionLayer.setVisible(false); });
 
@@ -635,16 +645,17 @@ export function createTerrainAnalysisTool({ map }) {
     resultJob = job;
     resultRequestKey = requestKey;
     const r = job.result, suffix = job.unit === 'degree' ? '°' : '%';
+    const definition = ANALYSIS_TOOLS[r.operation || 'slope'];
     const number = value => Number(value).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
     const summary = panel.querySelector('[data-result-summary]');
     summary.replaceChildren();
-    for (const [label, value] of [
-      ['Nhỏ nhất / Lớn nhất', `${number(r.min)} / ${number(r.max)} ${suffix}`],
-      ['Trung bình', `${number(r.mean)} ${suffix}`],
+    const measurements = [
+      ...definition.summary(r, number, suffix),
       ['Ô tính được', number(r.valid_cells)], ['Ô bị loại trong vùng', number(r.excluded_cells)],
       ['Diện tích có kết quả', `${number(r.valid_area_m2 / 1e6)} km²`],
       ['Lưới đầu ra', `${number(r.resolution[0])} × ${number(r.resolution[1])} m · ${r.crs}`],
-    ]) {
+    ];
+    for (const [label, value] of measurements) {
       const row = document.createElement('div'), term = document.createElement('dt'), valueNode = document.createElement('dd');
       term.textContent = label; valueNode.textContent = value; row.append(term, valueNode); summary.append(row);
     }
@@ -654,11 +665,11 @@ export function createTerrainAnalysisTool({ map }) {
       const row = document.createElement('div'), swatch = document.createElement('i'), label = document.createElement('span'), amount = document.createElement('span');
       swatch.style.backgroundColor = item.color;
       // Classes use [lower, upper), with the final class including its upper bound.
-      label.textContent = item.max === null ? `≥ ${number(item.min)} ${suffix}` : `${number(item.min)} ${index === r.classes.length - 1 ? '–' : '– <'} ${number(item.max)} ${suffix}`;
+      label.textContent = definition.legend(item, index, r, number, suffix);
       amount.textContent = `${number(item.percent)}%`;
       row.append(swatch, label, amount); legend.append(row);
     });
-    panel.querySelector('[data-result-note]').textContent = `Ảnh trên bản đồ là xem trước tối đa 1536 px; GeoTIFF giữ lưới đầy đủ. Trong 3D, kết quả tính từ DEM đã chọn được phủ lên địa hình hiển thị. Kết quả lưu tạm đến ${new Date(job.expires_at * 1000).toLocaleString('vi-VN')}.${r.reprojected ? ' DEM đã chuyển sang UTM để tính theo mét.' : ''}`;
+    panel.querySelector('[data-result-note]').textContent = `Kết quả lưu đến ${new Date(job.expires_at * 1000).toLocaleString('vi-VN')}.`;
     panel.querySelector('[data-slope-download]').href = slopeUrl(job.files.geotiff);
     panel.querySelector('[data-slope-report]').href = slopeUrl(job.files.report);
     if (resultLayer) map.removeLayer(resultLayer);
@@ -667,7 +678,7 @@ export function createTerrainAnalysisTool({ map }) {
     if (result3D) getCesiumScene()?.imageryLayers.remove(result3D, true);
     result3D = null;
     result3DJob = null;
-    resultLayer = new ImageLayer({ title: `Độ dốc — ${job.title} (${suffix})`, opacity: .8, zIndex: 500,
+    resultLayer = new ImageLayer({ title: `${definition.title} — ${job.title} (${suffix})`, opacity: .8, zIndex: 500,
       source: new ImageStatic({ url: slopeUrl(job.files.preview), imageExtent: r.preview_extent, projection: r.preview_crs, crossOrigin: 'use-credentials', interpolate: false }) });
     resultLayer.set('layerKind', 'raster');
     resultLayer.set('olcs_skip', true);
@@ -686,6 +697,10 @@ export function createTerrainAnalysisTool({ map }) {
     updateRegion();
     if (!panel.slopeRequest) return;
     const request = structuredClone(panel.slopeRequest), requestKey = JSON.stringify(request);
+    if (request.operation === 'footprint') {
+      const input = activeDem();
+      fitAnalysisExtent(input.metadata.bbox, input.metadata.crs);
+    }
     slopeBusy = true;
     slopeRunStopped = false;
     slopeJob = null;
@@ -693,7 +708,7 @@ export function createTerrainAnalysisTool({ map }) {
     slopeProgress.hidden = false;
     panel.querySelector('[data-cancel-slope]').disabled = true;
     panel.querySelector('[data-cancel-slope]').hidden = false;
-    slopeStatus.textContent = request.operation === 'footprint' ? 'Đang gửi yêu cầu xác định ranh giới DEM…' : 'Đang gửi yêu cầu phân tích…';
+    slopeStatus.textContent = request.operation === 'footprint' ? 'Đang xác định phạm vi…' : 'Đang gửi yêu cầu phân tích…';
     slopeProgress.querySelector('progress').value = 0;
     lockSlopeInputs();
     try {
@@ -715,8 +730,6 @@ export function createTerrainAnalysisTool({ map }) {
         if (request.operation === 'footprint') {
           dataFootprint = { ...slopeJob, dem: request.dem };
           updateRegion();
-          const geometry = new GeoJSON().readGeometry(slopeJob.result.geometry);
-          fitAnalysisExtent(geometry.getExtent(), 'EPSG:4326');
         } else displaySlope(slopeJob, requestKey);
       }
     } catch (error) {
@@ -732,7 +745,7 @@ export function createTerrainAnalysisTool({ map }) {
   panel.querySelector('[data-stop-analysis]').addEventListener('click', async event => {
     const button = event.currentTarget;
     button.disabled = true;
-    button.textContent = 'Đang dừng…';
+    button.textContent = 'Đang kết thúc…';
     slopeRunStopped = true;
     stopDrawing();
     try {
@@ -753,10 +766,10 @@ export function createTerrainAnalysisTool({ map }) {
       document.getElementById('menu-btn')?.focus();
     } catch (error) {
       slopeProgress.hidden = false;
-      slopeStatus.textContent = `Chưa xác nhận dừng được tác vụ: ${error.message} Bấm Dừng phân tích để thử lại.`;
+      slopeStatus.textContent = `Chưa xác nhận dừng được tác vụ: ${error.message} Bấm Kết thúc phân tích để thử lại.`;
     } finally {
       button.disabled = false;
-      button.textContent = 'Dừng phân tích';
+      button.textContent = 'Kết thúc phân tích';
     }
   });
   panel.querySelector('[data-cancel-slope]').addEventListener('click', async event => {
@@ -786,9 +799,9 @@ export function createTerrainAnalysisTool({ map }) {
       ['Kích thước', `${metadata.width.toLocaleString('vi-VN')} × ${metadata.height.toLocaleString('vi-VN')} px`],
       ['Hệ tọa độ', metadata.crs || 'Chưa có — cần nhập EPSG'],
       ['Kích thước ô', `${Number(metadata.resolution_x).toPrecision(5)} × ${Number(metadata.resolution_y).toPrecision(5)} ${metadata.horizontal_unit || 'đơn vị CRS'}`],
-      ['Số band', metadata.band_count], ['NoData', metadata.no_data ?? 'Không khai báo'],
+
     ];
-    if (metadata.value_min !== undefined) rows.push(['Khoảng cao độ', `${metadata.value_min.toFixed(3)} → ${metadata.value_max.toFixed(3)} ${metadata.elevation_unit}`]);
+
     rows.forEach(([label, value]) => {
       const row = document.createElement('div');
       const key = document.createElement('dt');
@@ -805,7 +818,7 @@ export function createTerrainAnalysisTool({ map }) {
     const needsCrs = preview && !preview.crs;
     const valid = limits && preview && fileInput.files[0]?.size <= limits.max_bytes && confirmation.checked && unitSelect.value && (!needsCrs || epsgInput.validity.valid && epsgInput.value);
     uploadButton.disabled = busy || !valid || upload?.status === 'ready';
-    uploadButton.textContent = upload?.status === 'uploading' ? 'Tiếp tục tải và kiểm tra' : upload?.status === 'ready' ? 'DEM đã sẵn sàng' : 'Tải lên và kiểm tra';
+    uploadButton.textContent = upload?.status === 'uploading' ? 'Tiếp tục tải và kiểm tra' : upload?.status === 'ready' ? 'raster đã sẵn sàng' : 'Tải lên và kiểm tra';
     fileInput.disabled = busy;
     options.querySelectorAll('select, input').forEach(item => { item.disabled = busy || Boolean(upload); });
     panel.querySelectorAll('[data-dem-source]').forEach(item => { item.disabled = busy; });
@@ -842,12 +855,12 @@ export function createTerrainAnalysisTool({ map }) {
     info.hidden = true;
     options.hidden = true;
     progressBox.hidden = true;
-    confirmation.checked = false;
-    unitSelect.value = '';
+    confirmation.checked = true;
+    unitSelect.value = 'm';
     epsgInput.value = '';
     updateControls();
     const file = fileInput.files[0];
-    if (!file) return message('Chưa chọn tệp DEM.');
+    if (!file) return message('Chưa chọn tệp raster.');
     if (!/\.tiff?$/i.test(file.name)) return message('Vui lòng chọn tệp .tif hoặc .tiff.', true);
     if (!file.size || limits && file.size > limits.max_bytes) return message('Tệp rỗng hoặc vượt giới hạn tải lên.', true);
     message('Đang đọc metadata GeoTIFF…');
@@ -868,6 +881,7 @@ export function createTerrainAnalysisTool({ map }) {
         resolution_y: Math.abs(resolution[1]), no_data: image.getGDALNoData(),
         horizontal_unit: keys.GeographicTypeGeoKey && !keys.ProjectedCSTypeGeoKey ? 'độ' : 'đơn vị CRS' };
       bandSelect.replaceChildren(...Array.from({ length: bandCount }, (_, index) => new Option(`Band ${index + 1}`, index + 1)));
+      panel.querySelector('[data-band-row]').hidden = bandCount <= 1;
       panel.querySelector('[data-crs-row]').hidden = Boolean(preview.crs);
       if (keys.VerticalUnitsGeoKey === 9001) unitSelect.value = 'm';
       displayMetadata(preview);
@@ -903,7 +917,7 @@ export function createTerrainAnalysisTool({ map }) {
       while (upload.received < file.size) {
         progress.value = upload.received / file.size * 100;
         progressLabel.textContent = `Đang tải ${Math.floor(progress.value)}%`;
-        message('Đang tải DEM lên vùng lưu trữ tạm…');
+        message('Đang tải raster lên vùng lưu trữ tạm…');
         const end = Math.min(upload.received + limits.chunk_bytes, file.size);
         const response = await requestJson(`/mygis/dem-uploads/${upload.id}/?offset=${upload.received}`, {
           method: 'PUT', signal, headers: { 'Content-Type': 'application/octet-stream' }, body: file.slice(upload.received, end),
@@ -924,13 +938,13 @@ export function createTerrainAnalysisTool({ map }) {
         });
         upload = (await requestJson(`/mygis/dem-uploads/${upload.id}/`, { signal })).upload;
       }
-      if (upload.status !== 'ready') throw new Error(upload.message || 'DEM không hợp lệ.');
+      if (upload.status !== 'ready') throw new Error(upload.message || 'raster không hợp lệ.');
       progress.value = 100;
-      progressLabel.textContent = 'DEM sẵn sàng';
+      progressLabel.textContent = 'raster sẵn sàng';
       displayMetadata(upload.metadata);
       panel.demInput = { source: 'upload', id: upload.id, metadata: upload.metadata, expires_at: upload.expires_at };
       panel.dispatchEvent(new CustomEvent('dem-input-ready', { detail: panel.demInput }));
-      message(`DEM sẵn sàng. Lưu tạm đến ${new Date(upload.expires_at * 1000).toLocaleString('vi-VN')}.${upload.metadata.requires_reprojection ? ' Cần chuyển hệ chiếu trước khi tính độ dốc.' : ''}`);
+      message('Raster đã sẵn sàng.');
     } catch (error) {
       if (error.name !== 'AbortError') {
         message(`${error.message}${upload?.status === 'uploading' ? ' Bấm Tiếp tục tải để thử lại.' : ''}`, true);
@@ -944,11 +958,12 @@ export function createTerrainAnalysisTool({ map }) {
 
   function showSelection() {
     updateRegion();
+    selection.hidden = source === 'server';
     selection.classList.toggle('error', source === 'file' && fileError);
     if (source === 'server') {
       selection.textContent = select.value
         ? `Đã chọn: ${select.selectedOptions[0].textContent}`
-        : select.disabled ? 'Chưa có lớp DEM. Thêm dữ liệu DEM hoặc chọn tệp từ máy.' : 'Chọn lớp DEM để chuẩn bị phân tích.';
+        : select.disabled ? 'Chưa có lớp raster. Thêm dữ liệu raster hoặc chọn tệp từ máy.' : 'Chọn lớp raster để chuẩn bị phân tích.';
       return;
     }
     selection.textContent = fileMessage;
@@ -958,11 +973,33 @@ export function createTerrainAnalysisTool({ map }) {
     const previous = select.value;
     const layers = getDemLayers();
     demChoices = layers;
-    select.replaceChildren(new Option(layers.length ? 'Chọn lớp DEM…' : 'Chưa có lớp DEM', ''),
+    select.replaceChildren(new Option(layers.length ? 'Chọn lớp raster…' : 'Chưa có lớp raster', ''),
       ...layers.map(layer => new Option(layer.title, layer.name)));
     select.disabled = !layers.length;
     if (layers.some(layer => layer.name === previous)) select.value = previous;
+    prepareRasterSelection();
+  }
+
+  async function prepareRasterSelection() {
+    const name = select.value, version = ++rasterGridVersion;
+    rasterGridError = '';
+    rasterGridLoading = Boolean(name && !rasterGridCache.has(name));
     showSelection();
+    if (!rasterGridLoading) return;
+    try {
+      const data = await requestJson(`/mygis/rasters/${encodeURIComponent(name)}/analysis/`);
+      if (version !== rasterGridVersion) return;
+      rasterGridCache.set(name, data.metadata);
+      const item = demChoices.find(item => item.name === name);
+      if (item) item.metadata = { ...item.metadata, ...data.metadata };
+    } catch (error) {
+      if (version === rasterGridVersion) rasterGridError = error.message;
+    } finally {
+      if (version === rasterGridVersion) {
+        rasterGridLoading = false;
+        showSelection();
+      }
+    }
   }
 
   panel.querySelectorAll('[data-dem-source]').forEach(button => {
@@ -971,10 +1008,11 @@ export function createTerrainAnalysisTool({ map }) {
       panel.querySelectorAll('[data-dem-source]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
       panel.querySelector('[data-dem-server]').hidden = source !== 'server';
       panel.querySelector('[data-dem-file]').hidden = source !== 'file';
-      showSelection();
+      if (source === 'server') prepareRasterSelection();
+      else showSelection();
     });
   });
-  select.addEventListener('change', showSelection);
+  select.addEventListener('change', prepareRasterSelection);
   panel.querySelector('[data-server-unit]').addEventListener('change', updateRegion);
   fileInput.addEventListener('change', inspectFile);
   options.addEventListener('input', updateControls);
@@ -986,12 +1024,12 @@ export function createTerrainAnalysisTool({ map }) {
     progressBox.hidden = true;
     cancelButton.disabled = false;
     updateControls();
-    message(removed ? 'Đã hủy DEM tạm. Bạn có thể tải lại hoặc đổi tệp.' : 'Đã dừng trên trình duyệt; chưa xác nhận xóa được tệp tạm trên máy chủ.', !removed);
+    message(removed ? 'Đã hủy raster tạm. Bạn có thể tải lại hoặc đổi tệp.' : 'Đã dừng trên trình duyệt; chưa xác nhận xóa được tệp tạm trên máy chủ.', !removed);
   });
   function loadLimits() {
     return requestJson('/mygis/dem-uploads/').then(data => {
     limits = data;
-    panel.querySelector('[data-upload-limit]').textContent = `Tối đa ${(data.max_bytes / 1024 ** 3).toLocaleString('vi-VN')} GiB/tệp · Lưu tạm ${data.ttl_seconds / 3600} giờ.`;
+    panel.querySelector('[data-upload-limit]').textContent = `GeoTIFF · tối đa ${data.max_bytes / 1024 ** 3} GiB`;
     updateControls();
   }).catch(() => {
     panel.querySelector('[data-upload-limit]').textContent = 'Chưa kết nối được backend. Mở lại bảng để thử kết nối.';
@@ -1021,7 +1059,37 @@ export function createTerrainAnalysisTool({ map }) {
     }
   });
   return {
-    open() {
+    open(mode = 'slope') {
+      if (!Object.hasOwn(ANALYSIS_TOOLS, mode)) return;
+      if (mode !== analysisType && (slopeBusy || busy)) {
+        panel.classList.add('shown');
+        slopeProgress.hidden = false;
+        slopeStatus.textContent = 'Hãy hoàn tất hoặc hủy tác vụ hiện tại trước khi đổi loại phân tích.';
+        return;
+      }
+      if (mode !== analysisType) {
+        analysisType = mode;
+        const title = `Phân tích ${analysisLabel()}`;
+        panel.setAttribute('aria-label', title);
+        panel.querySelector('.tool-panel-header strong').textContent = title;
+        panel.querySelector('[data-analysis-unit-label]').textContent = `Đơn vị ${analysisLabel()}`;
+        const units = panel.querySelector('[data-slope-unit]');
+        units.replaceChildren(...analysisDefinition().units.map(unit => new Option(unit.label, unit.value)));
+        panel.querySelector('[data-analysis-unit-row]').hidden = analysisDefinition().units.length === 1;
+        panel.querySelector('#terrain-analysis-note').textContent = analysisDefinition().note;
+        panel.querySelector('[data-analysis-result-heading]').textContent = `Kết quả ${analysisLabel()}`;
+        resultBox.setAttribute('aria-label', `Kết quả ${analysisLabel()}`);
+        slopeProgress.querySelector('progress').setAttribute('aria-label', `Tiến trình tính ${analysisLabel()}`);
+        if (resultLayer) map.removeLayer(resultLayer);
+        resultLayer = null;
+        if (result3D) getCesiumScene()?.imageryLayers.remove(result3D, true);
+        ++result3DVersion;
+        result3D = null;
+        result3DJob = loading3DJob = null;
+        resultJob = slopeJob = null;
+        resultRequestKey = '';
+        resultBox.hidden = slopeProgress.hidden = true;
+      }
       if (!limits) loadLimits();
       refreshLayers();
       panel.classList.add('shown');

@@ -182,7 +182,7 @@ function createRasterLayer(cfg) {
   layer.set('configId', cfg.id);
   layer.set('layerKind', 'raster');
   layer.set('rasterName', cfg.layerName);
-  layer.set('rasterMetadata', { name: cfg.layerName, title: cfg.title, presentation_type: cfg.presentation_type || 'thematic' });
+  layer.set('rasterMetadata', { name: cfg.layerName, title: cfg.title, presentation_type: 'raster' });
 
   return layer;
 }
@@ -491,6 +491,7 @@ document.querySelectorAll('[data-section]').forEach(button => {
     else if (action === 'tool-search') auxiliaryTools.openToolSearch();
     else if (action === 'support') systemTools.openSupport();
     else if (action === 'terrain-slope') terrainAnalysis.open();
+    else if (action === 'terrain-aspect') terrainAnalysis.open('aspect');
     else return;
     closeMenu();
   });
@@ -508,7 +509,7 @@ document.addEventListener('webgis-tool-activate', event => {
   auxiliaryTools?.closeAll?.(name);
   systemTools?.closeAll?.(name);
   if (name !== 'position') positionSearch.close();
-  if (name !== 'terrain-slope' && !event.detail?.viewModeChange) terrainAnalysis.close();
+  if (!['terrain-slope', 'terrain-aspect'].includes(name) && !event.detail?.viewModeChange) terrainAnalysis.close();
 });
 document.addEventListener('click', event => {
   const button = event.target.closest('[data-menu-action], [data-raster-action], [data-tool-action], [data-config-action], [data-section]');
