@@ -1118,7 +1118,6 @@ function setEnabled(enabled) {
 }
 
 export function toggle3D() { if (ol3d) setEnabled(!ol3d.getEnabled()); }
-export function enable3D() { setEnabled(true); }
 export function applyStartupCamera(bridge, map) {
   const { center, distance, tilt } = STARTUP_3D_VIEW;
   const view = map.getView();
@@ -1139,7 +1138,6 @@ export function showStartup3D() {
     longitude: STARTUP_3D_VIEW.center[0], latitude: STARTUP_3D_VIEW.center[1]
   } }));
 }
-export function disable3D() { setEnabled(false); }
 export function is3DEnabled() { return ol3d ? ol3d.getEnabled() : false; }
 export function getCesiumScene() { return ol3d?.getCesiumScene() || null; }
 export function getOLCesium() { return ol3d; }

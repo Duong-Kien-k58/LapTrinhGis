@@ -63,48 +63,96 @@ python --version
 > hiển thị đầy đủ, hãy xin file dữ liệu hoặc bản sao lưu database từ người quản
 > lý dự án.
 
-## Cập nhật máy đã chạy được bản trước
+## Nâng cấp máy đã cài bản cũ và bổ sung đầy đủ dữ liệu
 
-Dừng Django và Vite trước khi cập nhật. Giữ nguyên `.env`, môi trường Python,
-database PostGIS và cấu hình GeoServer đang dùng; không chép đè `.env` bằng file mẫu.
-Tại thư mục gốc dự án:
+Cần cập nhật **code + database + raster/DEM + GeoServer**. `git pull` chỉ cập nhật
+mã nguồn và style, không tự bổ sung dữ liệu GIS. Các bước dưới đây dành cho Windows.
 
-```powershell
-git pull --ff-only origin main
-cd frontend
-npm ci
-cd ../backend
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-.\venv\Scripts\python.exe manage.py check
-.\venv\Scripts\python.exe manage.py migrate --plan
-```
+1. **Chuẩn bị từ máy đang chạy đầy đủ:** backup toàn bộ database PostGIS bằng
+   pgAdmin, định dạng **Custom**, gồm cấu trúc, dữ liệu, view và `django_migrations`.
+   Chép riêng các GeoTIFF: ảnh nền, SRTM 30 m và 34 DEM tỉnh; ghi lại phiên bản
+   GeoServer và cấu hình store/layer.
+2. **Sao lưu máy nhận:** dừng Django/Vite; sao lưu database cũ, `.env` và thư mục
+   dữ liệu GeoServer. Sao lưu hoặc commit code chỉnh riêng trước khi pull.
+3. **Cập nhật code và thư viện** tại thư mục gốc (Node.js ≥ 22.12, Python ≥ 3.12;
+   giả định đã có môi trường `backend/venv`):
 
-**Kiểm tra dữ liệu trước khi migrate:** bản này có migration `mygis.0003`–`0005`
-đổi dữ liệu tham chiếu và căn biên quốc gia. `0003` cần sẵn các bảng PostGIS
-`public.nuocngoai_all`, `public.nuocngoai`, `public.tthc`, `public.ub_tinh`;
-`0004` cần thêm `public.vn_tinh`. Đây là dữ liệu nhập riêng, không có trong Git.
-Sao lưu database bằng pgAdmin trước khi chạy migration. Nếu máy chỉ có dữ liệu
-của bản trước và thiếu các bảng nguồn, cần nhận bộ dữ liệu tương ứng từ người
-quản lý dự án rồi nhập vào database trước; chỉ pull code không bổ sung dữ liệu này.
-Không dùng `--fake` để bỏ qua các migration thay đổi dữ liệu.
+   ```powershell
+   git pull --ff-only origin main
+   .\backend\venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+   cd frontend
+   npm ci
+   cd ..
+   ```
 
-Khi dữ liệu đã đủ, chạy:
+4. **Khôi phục database:** trên PostgreSQL có PostGIS, tạo database mới, ví dụ
+   `webgis_full`, rồi Restore bản backup đầy đủ bằng pgAdmin. Nếu tài khoản hai máy
+   khác nhau, bỏ khôi phục owner/privilege. Kiểm tra log Restore; giữ database cũ
+   để đối chiếu.
+5. **Chép raster/DEM** vào thư mục cố định, ví dụ `D:\WebGISData`, không đặt trong
+   `temp/`. GeoServer và Django phải đọc được tệp. DEM dùng phân tích phải là
+   GeoTIFF cao độ, giữ đúng CRS, NoData và đơn vị cao độ.
+6. **Thiết lập GeoServer:** dùng workspace `webgis`, kết nối PostGIS Store tới
+   database vừa restore; publish hoặc cập nhật các lớp sau:
 
-```powershell
-.\venv\Scripts\python.exe manage.py migrate
-.\venv\Scripts\python.exe manage.py runserver
-```
+   | Loại | Tên lớp |
+   | --- | --- |
+   | Vector | `ranhgioi`, `nenbien`, `khung25k`, `nuocngoai`, `tthc`, `vn_tinh`, `vn_xa`, `qlo`, `tinhlo` |
+   | Raster | `fast_alpha`, `SRTM_30_VN_UTM` và 34 lớp `dem_*` đúng tên trong `frontend/src/config/layers.js` |
 
-Mở terminal khác tại `frontend`, chạy `npm run dev`. Kiểm tra các lớp
-`webgis:tthc`, `webgis:nuocngoai`, `webgis:ranhgioi` đã publish đúng trên GeoServer;
-`ranhgioi` là lớp ranh giới hiển thị mặc định của bản mới. Git không cập nhật
-datastore hay layer của GeoServer; style ứng dụng nằm trong `styleLayer/` và được
-cập nhật cùng mã nguồn. Các DEM 10 m theo tỉnh chỉ dùng được
-sau khi publish dữ liệu riêng, không bắt buộc để mở ứng dụng.
+   Kiểm tra CRS, tính bounding box và thử **Layer Preview**. DEM dùng phân tích
+   cần store **GeoTIFF cục bộ với đường dẫn tuyệt đối**, ví dụ
+   `file:///D:/WebGISData/dem10m/ten_file.tif`. Sửa các đường dẫn cũ theo máy nhận.
+7. **Cấu hình `.env`:** giữ file đang dùng, đối chiếu `.env.example` và cập nhật:
 
-Để dùng phân tích độ dốc trên máy khác, bổ sung `DEM_GDAL_PYTHON` vào `.env`,
-trỏ tới Python có GDAL của QGIS thực tế trên máy đó (xem `.env.example`). Không
-cần cài lại toàn bộ dự án. Sau khi sửa `.env`, khởi động lại Django và Vite.
+   | Biến | Giá trị cần thiết lập |
+   | --- | --- |
+   | `POSTGRES_*` | Database mới và tài khoản PostgreSQL trên máy nhận |
+   | `GEOSERVER_REST_URL`, `GEOSERVER_WORKSPACE` | Mặc định `http://localhost:8080/geoserver/rest`, `webgis` |
+   | `GEOSERVER_ADMIN_USER`, `GEOSERVER_ADMIN_PASSWORD` | Tài khoản quản trị GeoServer |
+   | `DEM_GDAL_PYTHON` | Đường dẫn Python có GDAL của QGIS trên máy nhận |
+   | `GEOSERVER_LIB_DIR` | Thư mục `webapps/geoserver/WEB-INF/lib` thực tế |
+   | `STYLE_JAVA` | Để trống nếu Java đã có trong PATH; nếu chưa, trỏ tới `java.exe` |
+   | `VITE_CESIUM_ION_TOKEN` | Token Cesium để dùng các dịch vụ địa hình 3D |
+
+   Cài **GeoServer CSS extension đúng phiên bản GeoServer** nếu còn thiếu.
+   Style ứng dụng được lấy từ `styleLayer/`, không cần tạo lại từng style trên
+   GeoServer. Địa hình Cesium World Terrain và DEM GeoTIFF là hai nguồn riêng.
+8. **Kiểm tra và chạy backend** tại thư mục gốc:
+
+   ```powershell
+   .\backend\venv\Scripts\python.exe backend/manage.py check
+   .\backend\venv\Scripts\python.exe backend/manage.py migrate --plan
+   ```
+
+   Migration chỉ quản lý metadata raster; dữ liệu vector được nhập và publish
+   riêng trên GeoServer. Các bước thay lớp/căn chỉnh GIS cũ đã được thay bằng
+   mốc tương thích, không cần bảng nguồn cũ hoặc schema backup để cài đặt.
+   Giữ `django_migrations` khi backup/restore để bảo toàn lịch sử nâng cấp;
+   không cần dùng `--fake`.
+   Schema `reference_backup_20261025` nếu có chỉ là bản sao dữ liệu cũ,
+   ứng dụng không sử dụng và migration mới không tạo lại schema này.
+
+   ```powershell
+   .\backend\venv\Scripts\python.exe backend/manage.py migrate
+   .\backend\venv\Scripts\python.exe backend/manage.py runserver
+   ```
+
+   Mở terminal thứ hai tại thư mục gốc:
+
+   ```powershell
+   cd frontend
+   npm run dev
+   ```
+
+9. **Nghiệm thu:** giữ PostgreSQL, GeoServer, Django và Vite cùng chạy; mở
+   `http://localhost:5173`. Bật từng lớp vector/raster/DEM, xem bảng thuộc tính,
+   tra cứu pixel, thử độ dốc/hướng dốc trên vùng nhỏ và kiểm tra 3D/mặt cắt.
+   Nếu còn style riêng từ bản cũ, dùng nút **Mặc định** trong công cụ trình bày.
+
+**Giới hạn hiện tại:** đăng nhập chưa kết nối xác thực backend; menu Dự án mới
+là bản xem trước, chưa lưu dự án vào backend. Cài đủ dữ liệu không bổ sung các
+chức năng chưa được triển khai này.
 
 ## Cài đặt
 
@@ -302,27 +350,6 @@ GEOSERVER_WORKSPACE='webgis'
 
 Khởi động lại Django sau khi điền thông tin. Các API raster dùng CSRF; frontend tự lấy token và gửi cookie. Nếu đổi cổng frontend, cập nhật `CSRF_TRUSTED_ORIGINS` trong `.env`.
 
-## Cập nhật máy đã cài dự án
-
-Dừng Django và Vite bằng `Ctrl+C`. Nếu có thay đổi code riêng, commit hoặc sao lưu
-trước khi pull. Chạy tại thư mục gốc dự án:
-
-```powershell
-git pull --ff-only origin main
-.\backend\venv\Scripts\python.exe -m pip install -r backend/requirements.txt
-.\backend\venv\Scripts\python.exe backend/manage.py migrate
-cd frontend
-npm ci
-npm run dev
-```
-
-Giữ nguyên `.env` đang sử dụng, đối chiếu `.env.example` để bổ sung biến còn thiếu.
-Mở terminal thứ hai tại thư mục gốc và chạy backend:
-
-```powershell
-.\backend\venv\Scripts\python.exe backend/manage.py runserver
-```
-
 ## Sử dụng nhanh
 
 ### Giao diện Dự án — bước 1
@@ -408,8 +435,7 @@ công cụ báo lỗi thay vì gán cao độ 0. Đóng công cụ hoặc chuy�
 kết quả đang chờ tải.
 
 Kiểm thử tính toán địa hình, đồng bộ lớp và tải WMS: `npm test`
-tại thư mục `frontend`. Các test địa hình/WMS hiện có nằm trong
-`temp/tests/frontend/unit/`; kiểm thử style từ file nằm trong `frontend/tests/`.
+tại thư mục `frontend`. Các bài kiểm thử frontend nằm trong `frontend/tests/`.
 
 ## Tổ chức mã nguồn frontend
 
@@ -450,6 +476,17 @@ dừng cả sáu hiệu ứng. Khi về 2D hoặc ẩn tab, hiệu ứng đượ
 được giải phóng; khi quay lại 3D, các lựa chọn được khôi phục.
 
 ## Kiểm tra mã nguồn
+
+Kiểm thử API backend: chạy `python manage.py test tests` từ thư mục `backend`
+bằng Python trong `venv`. Kiểm thử GDAL chạy riêng bằng Python của QGIS với
+file `backend/tests/slope_gdal_cases.py`.
+
+Kiểm thử migration (SQLite trong bộ nhớ, không kết nối database đang dùng):
+
+```powershell
+.\backend\venv\Scripts\python.exe backend/tests/migration_upgrade_check.py
+```
+
 
 Tại thư mục gốc:
 
@@ -539,7 +576,8 @@ trình duyệt; GDAL kiểm tra band và tính thống kê ở tiến trình ri�
 ### Thư mục tạm dùng chung
 
 Các dữ liệu sinh ra khi chạy ứng dụng được gom trong `temp/`. Toàn bộ thư mục
-`/temp/` bị Git bỏ qua, kể cả các file test và file đánh dấu thư mục bên trong:
+`/temp/` bị Git bỏ qua; mã nguồn kiểm thử nằm riêng trong
+`frontend/tests/` và `backend/tests/`:
 
 | Thư mục | Nội dung |
 | --- | --- |
@@ -547,20 +585,13 @@ Các dữ liệu sinh ra khi chạy ứng dụng được gom trong `temp/`. To�
 | `temp/slope-jobs/` | Raster độ dốc, ảnh xem trước, thống kê và trạng thái tác vụ |
 | `temp/django-uploads/` | File tạm do Django nhận upload |
 | `temp/runtime/` | File tạm của Python/GDAL |
-| `temp/tests/frontend/unit/` | Các file kiểm thử frontend |
-| `temp/tests/backend/` | Các file kiểm thử backend |
 | `temp/tests/` | Dữ liệu sinh ra khi chạy kiểm thử |
 | `temp/python-cache/` | Bytecode/cache Python |
 | `temp/vite-cache/` | Cache frontend |
 | `temp/frontend-dist/` | Bản build frontend, có thể tạo lại |
 | `temp/backups/`, `temp/reports/`, `temp/logs/` | Nơi đặt bản sao tạm, báo cáo và log khi cần |
-| `temp/unused-assets/` | Tài nguyên cũ không còn được ứng dụng tham chiếu |
 
 Để dọn toàn bộ, dừng backend, frontend và các tác vụ xử lý trước rồi xóa nội dung
 trong `temp/` (giữ `.gitkeep` nếu có). Thao tác này cũng xóa các DEM tải tạm và
 bản build; cần tải lại DEM hoặc chạy build lại. Ứng dụng tự tạo lại các thư mục
-runtime cần thiết khi khởi động. Các file kiểm thử cũng được gom trong `temp/tests/`
-theo cách tổ chức hiện tại; xóa thư mục này sẽ xóa cả các test, nhưng không ảnh
-hưởng chức năng chạy ứng dụng. Lệnh test chỉ dùng được khi còn các file test.
-Chạy backend test từ thư mục `backend` bằng:
-`python manage.py test ../temp/tests/backend`.
+runtime cần thiết khi khởi động. Dọn `temp/` không xóa mã nguồn kiểm thử.

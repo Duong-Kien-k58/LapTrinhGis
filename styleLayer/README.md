@@ -59,9 +59,7 @@ dịch vụ GeoServer đang chạy. Máy chỉ phục vụ bản build không c�
 GeoServer yêu cầu mỗi lớp có một style mặc định nội bộ. Các lớp `webgis`
 dùng style hệ thống tối thiểu (`generic`/`raster`) cho yêu cầu bên ngoài ứng
 dụng; ứng dụng luôn gửi style riêng từ CSS. Không xóa style hệ thống hoặc style
-của các workspace khác. Đã gỡ 4 style tùy chỉnh cũ không còn được dùng; giữ
-9 style mà workspace `ptn` vẫn tham chiếu theo lựa chọn của người quản lý.
-Ứng dụng này không dùng 9 style đó.
+của các workspace khác.
 
 Bản triển khai cần chạy lại `npm run build` khi sửa CSS. Bản đồ nền XYZ/OSM
 và ảnh kết quả phân tích không dùng những file CSS này.

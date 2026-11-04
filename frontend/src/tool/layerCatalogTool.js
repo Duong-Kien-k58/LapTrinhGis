@@ -1,7 +1,6 @@
 import WMSCapabilities from 'ol/format/WMSCapabilities.js';
 import { get as getProjection, transformExtent } from 'ol/proj.js';
 import { extend, createEmpty } from 'ol/extent.js';
-import { RASTER_LAYER_CONFIGS } from '../config/layers.js';
 
 const STORAGE_KEY = 'webgis_layer_catalog_v1';
 
