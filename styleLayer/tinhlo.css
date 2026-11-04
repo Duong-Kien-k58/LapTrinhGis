@@ -1,0 +1,51 @@
+/* =========================================================
+   STYLE CSS CHO LOP tinhlo
+   Phan loai theo truong: loaiduong
+   Kieu du lieu: Line
+
+   Quy tac hien thi:
+   - Chi hien lop tinh lo khi: @scale <= 250000
+   - Zoom xa hon 250K thi an lop tinh lo
+   ========================================================= */
+
+
+/* =========================================================
+   1. AN LOP KHI ZOOM XA HON 250K
+   ========================================================= */
+
+*[@scale > 250000] {
+  stroke: none;
+}
+
+
+/* =========================================================
+   2. STYLE MAC DINH TRONG KHOANG 0 - 250K
+   ========================================================= */
+
+*[@scale <= 250000] {
+  stroke: #cb836b;
+  stroke-width: 1.2;
+  stroke-linejoin: bevel;
+  stroke-linecap: square;
+}
+
+
+/* =========================================================
+   3. PHAN LOAI MAU THEO loaiduong
+   ========================================================= */
+
+[loaiduong = 'Duong Da'][@scale <= 250000] {
+  stroke: #50cfa2;
+}
+
+[loaiduong = 'Duong Dat Lon'][@scale <= 250000] {
+  stroke: #1131e8;
+}
+
+[loaiduong = 'Duong Dat Nho'][@scale <= 250000] {
+  stroke: #7bcf15;
+}
+
+[loaiduong = 'Duong Nhua'][@scale <= 250000] {
+  stroke: #e368dd;
+}

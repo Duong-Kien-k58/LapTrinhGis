@@ -229,8 +229,9 @@ export function fetchWms(src, options = {}) {
 // SLD dài không phù hợp URL GET; GeoServer nhận cùng tham số qua form POST.
 export function loadWmsImage(image, src) {
   const element = image.getImage();
-  if (src.length < 8000) { element.src = src; return; }
   const url = new URL(src, window.location.href);
+  const hasStyle = [...url.searchParams.keys()].some(key => key.toUpperCase() === 'SLD_BODY');
+  if (!hasStyle && src.length < 8000) { element.src = src; return; }
   const body = new URLSearchParams(url.search);
   url.search = '';
   fetch(url, { method: 'POST', body, signal: AbortSignal.timeout(30000) })

@@ -1,0 +1,19 @@
+/* Original pin artwork, anchored at the tip. Scale denominators match WMS. */
+[@sd < 4000000] {
+  mark: url('assets/tthc-pin.svg');
+  mark-mime: 'image/svg+xml';
+  mark-size: 16;
+  mark-anchor: 0.5 0;
+}
+[@sd < 1000000] { mark-size: 22; }
+[@sd < 250000] { mark-size: 28; }
+[@sd < 60000] { mark-size: 34; }
+[@sd < 1000000] {
+  label: [tinhly];
+  font-family: 'Arial'; font-size: 12; font-fill: #ffffff;
+  font-weight: bold; halo-color: #263238; halo-radius: 1.5;
+  label-offset: 0 -38;
+  label-anchor: 0.5 0.5;
+  label-max-displacement: 20;
+  label-conflict-resolution: true;
+}

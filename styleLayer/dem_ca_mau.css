@@ -1,0 +1,40 @@
+/* Elevation ramp, values in metres. */
+* {
+  raster-channels: auto;
+  raster-opacity: 1;
+  raster-color-map-type: ramp;
+  raster-color-map:
+    color-map-entry(#000000, -9999, 0, 'NoData')
+    color-map-entry(#0b3d2e, -250, 1, '-250 m')
+    color-map-entry(#0e4f33, -100, 1, '-100 m')
+    color-map-entry(#126137, -50, 1, '-50 m')
+    color-map-entry(#18713c, -20, 1, '-20 m')
+    color-map-entry(#237f41, -10, 1, '-10 m')
+    color-map-entry(#2d8d45, 0, 1, '0 m')
+    color-map-entry(#3f994b, 2, 1, '2 m')
+    color-map-entry(#53a451, 5, 1, '5 m')
+    color-map-entry(#68b057, 10, 1, '10 m')
+    color-map-entry(#80bd60, 20, 1, '20 m')
+    color-map-entry(#97cb68, 30, 1, '30 m')
+    color-map-entry(#aed573, 50, 1, '50 m')
+    color-map-entry(#c4de7f, 75, 1, '75 m')
+    color-map-entry(#d9e68b, 100, 1, '100 m')
+    color-map-entry(#e3e694, 150, 1, '150 m')
+    color-map-entry(#ede69d, 200, 1, '200 m')
+    color-map-entry(#eddc98, 300, 1, '300 m')
+    color-map-entry(#e2c983, 400, 1, '400 m')
+    color-map-entry(#d7b66e, 500, 1, '500 m')
+    color-map-entry(#c7a062, 650, 1, '650 m')
+    color-map-entry(#b88b56, 800, 1, '800 m')
+    color-map-entry(#a7774c, 1000, 1, '1000 m')
+    color-map-entry(#966743, 1200, 1, '1200 m')
+    color-map-entry(#84563a, 1400, 1, '1400 m')
+    color-map-entry(#744a35, 1600, 1, '1600 m')
+    color-map-entry(#644031, 1800, 1, '1800 m')
+    color-map-entry(#5f4239, 2000, 1, '2000 m')
+    color-map-entry(#92817b, 2250, 1, '2250 m')
+    color-map-entry(#c4bfbd, 2500, 1, '2500 m')
+    color-map-entry(#e2e2e2, 2750, 1, '2750 m')
+    color-map-entry(#f0f0f0, 3000, 1, '3000 m')
+    color-map-entry(#ffffff, 3250, 1, '3250 m');
+}

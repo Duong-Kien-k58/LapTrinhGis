@@ -1,0 +1,38 @@
+/* =========================================================
+   STYLE CSS CHO LOP Dissolved
+   Kieu du lieu: Line
+
+   Quy tac hien thi:
+   - Chi hien khi @scale <= 250000
+   - Zoom xa hon 250K thi an
+   ========================================================= */
+
+
+/* An lop khi zoom xa hon 250K */
+*[@scale > 250000] {
+  stroke: none;
+  label: "";
+}
+
+
+/* Ve duong trong khoang 0 - 250K */
+*[@scale <= 250000] {
+  stroke: #db1e2a;
+  stroke-width: 2;
+  stroke-linejoin: bevel;
+  stroke-linecap: square;
+}
+
+
+/* Hien label trong khoang 0 - 250K */
+*[@scale <= 250000] {
+  label: [td];
+
+  font-family: "Arial";
+  font-size: 13;
+  font-fill: #000000;
+
+  label-placement: line;
+  label-follow-line: true;
+  label-max-angle-delta: 90;
+}

@@ -4,6 +4,7 @@ import TileWMS from 'ol/source/TileWMS.js';
 import { RASTER_LAYER_CONFIGS, GEOSERVER_CONFIG } from '../config/layers.js';
 import { requestJson } from './apiClient.js';
 import { createToolPanel, loadWmsImage } from './toolUtils.js';
+import { getLocalStyleParams } from '../config/localStyles.js';
 //#endregion
 
 //#region 1. Loại trình bày và tạo lớp raster
@@ -14,7 +15,7 @@ export function createPublishedRasterLayer(raster) {
     source: new TileWMS({
       tileLoadFunction: loadWmsImage,
       url: GEOSERVER_CONFIG.wmsUrl,
-      params: { LAYERS: raster.name, TILED: true, FORMAT: 'image/png', TRANSPARENT: true },
+      params: { LAYERS: raster.name, ...getLocalStyleParams(raster.name, { raster: true }), FORMAT: 'image/png', TRANSPARENT: true },
       serverType: 'geoserver', crossOrigin: 'anonymous'
     })
   });

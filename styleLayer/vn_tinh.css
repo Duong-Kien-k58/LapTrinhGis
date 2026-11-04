@@ -1,0 +1,79 @@
+/* =========================================================
+   STYLE CSS CHO L?P vn_tinh — B?NG MÀU PASTEL SÁNG
+   Dùng cho GeoServer CSS Style.
+========================================================= */
+
+/* ?n l?p t?nh khi zoom quá xa ho?c quá g?n ð? nhý?ng ch? cho l?p x?. */
+*[@scale > 6000000],
+*[@scale <= 250000] {
+  fill: none;
+  stroke: none;
+  label: "";
+}
+
+/* Nét bao chung gi? ranh gi?i r? ràng nhýng không n?ng màu. */
+*[@scale <= 6000000][@scale > 250000] {
+  fill: #d7e6c7;
+  fill-opacity: 0.78;
+  stroke: #62778a;
+  stroke-width: 1;
+  stroke-opacity: 0.82;
+  stroke-linejoin: round;
+}
+
+/* B?ng màu pastel: sáng, d?u và ð? khác bi?t gi?a các t?nh k? nhau. */
+[ma_tinh = '01'][@scale <= 6000000][@scale > 250000] { fill: #b9e3d0; }
+[ma_tinh = '04'][@scale <= 6000000][@scale > 250000] { fill: #f6c7b6; }
+[ma_tinh = '08'][@scale <= 6000000][@scale > 250000] { fill: #ddeab5; }
+[ma_tinh = '11'][@scale <= 6000000][@scale > 250000] { fill: #b9d9f2; }
+[ma_tinh = '12'][@scale <= 6000000][@scale > 250000] { fill: #c9e7e1; }
+[ma_tinh = '14'][@scale <= 6000000][@scale > 250000] { fill: #c7e6c1; }
+[ma_tinh = '15'][@scale <= 6000000][@scale > 250000] { fill: #e1c6ed; }
+[ma_tinh = '19'][@scale <= 6000000][@scale > 250000] { fill: #c6c9f1; }
+[ma_tinh = '20'][@scale <= 6000000][@scale > 250000] { fill: #f2c0ad; }
+[ma_tinh = '22'][@scale <= 6000000][@scale > 250000] { fill: #f0b6bc; }
+[ma_tinh = '24'][@scale <= 6000000][@scale > 250000] { fill: #cde9b8; }
+[ma_tinh = '25'][@scale <= 6000000][@scale > 250000] { fill: #bde8d8; }
+[ma_tinh = '31'][@scale <= 6000000][@scale > 250000] { fill: #c8d9f6; }
+[ma_tinh = '33'][@scale <= 6000000][@scale > 250000] { fill: #d9e7b8; }
+[ma_tinh = '37'][@scale <= 6000000][@scale > 250000] { fill: #b8d5e9; }
+[ma_tinh = '38'][@scale <= 6000000][@scale > 250000] { fill: #d8c4f2; }
+[ma_tinh = '40'][@scale <= 6000000][@scale > 250000] { fill: #bde5ec; }
+[ma_tinh = '42'][@scale <= 6000000][@scale > 250000] { fill: #f1dea8; }
+[ma_tinh = '44'][@scale <= 6000000][@scale > 250000] { fill: #f5d8a6; }
+[ma_tinh = '46'][@scale <= 6000000][@scale > 250000] { fill: #c9e5b4; }
+[ma_tinh = '48'][@scale <= 6000000][@scale > 250000] { fill: #c6c9f1; }
+[ma_tinh = '51'][@scale <= 6000000][@scale > 250000] { fill: #b9d9f2; }
+[ma_tinh = '52'][@scale <= 6000000][@scale > 250000] { fill: #ddecc5; }
+[ma_tinh = '56'][@scale <= 6000000][@scale > 250000] { fill: #bfe8e4; }
+[ma_tinh = '66'][@scale <= 6000000][@scale > 250000] { fill: #ebc8e6; }
+[ma_tinh = '68'][@scale <= 6000000][@scale > 250000] { fill: #f2b9b2; }
+[ma_tinh = '75'][@scale <= 6000000][@scale > 250000] { fill: #d9e9b6; }
+[ma_tinh = '79'][@scale <= 6000000][@scale > 250000] { fill: #dec5ec; }
+[ma_tinh = '80'][@scale <= 6000000][@scale > 250000] { fill: #f2d4aa; }
+[ma_tinh = '82'][@scale <= 6000000][@scale > 250000] { fill: #f4cadf; }
+[ma_tinh = '86'][@scale <= 6000000][@scale > 250000] { fill: #efc0d1; }
+[ma_tinh = '91'][@scale <= 6000000][@scale > 250000] { fill: #d8c0ec; }
+[ma_tinh = '92'][@scale <= 6000000][@scale > 250000] { fill: #f2c1cb; }
+[ma_tinh = '96'][@scale <= 6000000][@scale > 250000] { fill: #eab8da; }
+
+/* Nh?n t?i trên n?n pastel, có vi?n sáng ð? r? trên m?i màu t?nh. */
+*[@scale <= 6000000][@scale > 250000] {
+  label: [ten_tinh];
+  font-family: 'Arial';
+  font-size: 13;
+  font-style: normal;
+  font-weight: bold;
+  font-fill: #243746;
+  halo-color: #f8fbfd;
+  halo-radius: 1.4;
+  label-anchor: 0.5 0.5;
+  label-offset: 0 0;
+  /* M?i t?nh ch? ð?t m?t nh?n; ch? d?ch chuy?n nh? khi c?n tránh va ch?m. */
+  label-max-displacement: 30;
+  label-goodness-of-fit: 0.5;
+  label-conflict-resolution: false;
+  label-remove-overlaps: false;
+  label-padding: 0;
+  label-group: false;
+}

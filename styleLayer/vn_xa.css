@@ -1,0 +1,92 @@
+/* =========================================================
+   STYLE CSS CHO L?P vn_xa — PASTEL VÀ NH?N KHÔNG L?P
+   Dùng cho GeoServer CSS Style.
+========================================================= */
+
+/* ?n l?p x? khi xem ? t? l? xa. */
+*[@scale > 250000] {
+  fill: none;
+  stroke: none;
+  label: "";
+}
+
+/* Ki?u vùng và vi?n chung. */
+*[@scale <= 250000] {
+  fill: #d8efe1;
+  fill-opacity: 0.8;
+  stroke: #6f8f7a;
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+}
+
+/* B?ng màu pastel theo m? t?nh. */
+[ma_tinh = '01'][@scale <= 250000] { fill: #d8efe1; }
+[ma_tinh = '04'][@scale <= 250000] { fill: #f1dddd; }
+[ma_tinh = '08'][@scale <= 250000] { fill: #dde5f4; }
+[ma_tinh = '11'][@scale <= 250000] { fill: #dce8f5; }
+[ma_tinh = '12'][@scale <= 250000] { fill: #d9edf2; }
+[ma_tinh = '14'][@scale <= 250000] { fill: #eadff2; }
+[ma_tinh = '15'][@scale <= 250000] { fill: #edf0d6; }
+[ma_tinh = '19'][@scale <= 250000] { fill: #d9efe3; }
+[ma_tinh = '20'][@scale <= 250000] { fill: #f2dfe7; }
+[ma_tinh = '22'][@scale <= 250000] { fill: #f2ded7; }
+[ma_tinh = '24'][@scale <= 250000] { fill: #d9f0ef; }
+[ma_tinh = '25'][@scale <= 250000] { fill: #ddf1dc; }
+[ma_tinh = '31'][@scale <= 250000] { fill: #e8f0d5; }
+[ma_tinh = '33'][@scale <= 250000] { fill: #e5e0f2; }
+[ma_tinh = '37'][@scale <= 250000] { fill: #d8efd8; }
+[ma_tinh = '38'][@scale <= 250000] { fill: #dde1f4; }
+[ma_tinh = '40'][@scale <= 250000] { fill: #f3e3d7; }
+[ma_tinh = '42'][@scale <= 250000] { fill: #d8eef1; }
+[ma_tinh = '44'][@scale <= 250000] { fill: #e3f2d8; }
+[ma_tinh = '46'][@scale <= 250000] { fill: #e7f2d8; }
+[ma_tinh = '48'][@scale <= 250000] { fill: #dbe4f3; }
+[ma_tinh = '51'][@scale <= 250000] { fill: #f1e7d5; }
+[ma_tinh = '52'][@scale <= 250000] { fill: #f0dce8; }
+[ma_tinh = '56'][@scale <= 250000] { fill: #f0dff0; }
+[ma_tinh = '66'][@scale <= 250000] { fill: #e6ddf2; }
+[ma_tinh = '68'][@scale <= 250000] { fill: #f2dff0; }
+[ma_tinh = '75'][@scale <= 250000] { fill: #eadff2; }
+[ma_tinh = '79'][@scale <= 250000] { fill: #f1def2; }
+[ma_tinh = '80'][@scale <= 250000] { fill: #f0ead6; }
+[ma_tinh = '82'][@scale <= 250000] { fill: #f2e4d8; }
+[ma_tinh = '86'][@scale <= 250000] { fill: #ddefdc; }
+[ma_tinh = '91'][@scale <= 250000] { fill: #f1dddd; }
+[ma_tinh = '92'][@scale <= 250000] { fill: #d8f0e9; }
+[ma_tinh = '96'][@scale <= 250000] { fill: #f2f1d8; }
+
+/* Ch? rule này t?o TextSymbolizer: m?i x? có ðúng m?t nh?n. */
+[ma_tinh = '01'][@scale <= 250000], [ma_tinh = '04'][@scale <= 250000],
+[ma_tinh = '08'][@scale <= 250000], [ma_tinh = '11'][@scale <= 250000],
+[ma_tinh = '12'][@scale <= 250000], [ma_tinh = '14'][@scale <= 250000],
+[ma_tinh = '15'][@scale <= 250000], [ma_tinh = '19'][@scale <= 250000],
+[ma_tinh = '20'][@scale <= 250000], [ma_tinh = '22'][@scale <= 250000],
+[ma_tinh = '24'][@scale <= 250000], [ma_tinh = '25'][@scale <= 250000],
+[ma_tinh = '31'][@scale <= 250000], [ma_tinh = '33'][@scale <= 250000],
+[ma_tinh = '37'][@scale <= 250000], [ma_tinh = '38'][@scale <= 250000],
+[ma_tinh = '40'][@scale <= 250000], [ma_tinh = '42'][@scale <= 250000],
+[ma_tinh = '44'][@scale <= 250000], [ma_tinh = '46'][@scale <= 250000],
+[ma_tinh = '48'][@scale <= 250000], [ma_tinh = '51'][@scale <= 250000],
+[ma_tinh = '52'][@scale <= 250000], [ma_tinh = '56'][@scale <= 250000],
+[ma_tinh = '66'][@scale <= 250000], [ma_tinh = '68'][@scale <= 250000],
+[ma_tinh = '75'][@scale <= 250000], [ma_tinh = '79'][@scale <= 250000],
+[ma_tinh = '80'][@scale <= 250000], [ma_tinh = '82'][@scale <= 250000],
+[ma_tinh = '86'][@scale <= 250000], [ma_tinh = '91'][@scale <= 250000],
+[ma_tinh = '92'][@scale <= 250000], [ma_tinh = '96'][@scale <= 250000] {
+  label: [ten_xa];
+  font-family: 'Arial';
+  font-size: 14;
+  font-style: normal;
+  font-weight: bold;
+  font-fill: #3c4043;
+  halo-color: #ffffff;
+  halo-radius: 1.4;
+  label-anchor: 0.5 0.5;
+  label-offset: 0 0;
+  label-max-displacement: 30;
+  label-fit-goodness: 0.5;
+  label-conflict-resolution: true;
+  label-remove-overlaps: true;
+  label-padding: 8;
+  label-group: false;
+}

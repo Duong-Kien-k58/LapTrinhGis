@@ -141,7 +141,7 @@ export const MAP_LAYER_CONFIGS = [
     ],
 
     // Chỉ dùng nếu sau này hiển thị layer bằng WFS.
-    // WMS đang hiển thị theo style bạn đặt trong GeoServer.
+    // WMS hiển thị theo file styleLayer/tthc.css của dự án.
     style: {
       type: 'polygon',
       fill: 'rgba(255, 255, 0, 0.03)',

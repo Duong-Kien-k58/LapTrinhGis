@@ -2651,6 +2651,62 @@ button, input, select, a { touch-action: manipulation; }
 .ol-overviewmap.layer-overview-control .ol-overviewmap-box {border:2px solid #20cbb7;background:#20cbb71a}
 /* #endregion */
 
+/* #region Dự án: hộp thoại khai báo và bảng thông tin */
+.project-dialog {
+  box-sizing: border-box; width: min(600px, calc(100vw - 32px)); max-height: calc(100dvh - 32px);
+  padding: 0; overflow: auto; border: 1px solid #3b6570; border-radius: 14px;
+  color: var(--text); background: var(--surface); box-shadow: 0 24px 80px #0008;
+  font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px;
+}
+.project-dialog::backdrop { background: #071119a6; backdrop-filter: blur(3px); }
+.project-dialog [hidden] { display: none !important; }
+.project-dialog-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--border); background: #1b2e3a; }
+.project-eyebrow { color: var(--accent); font-size: 10px; font-weight: 650; letter-spacing: 1px; }
+.project-dialog h2 { margin: 5px 0 0; font-size: 21px; font-weight: 650; }
+.project-dialog button { min-height: 38px; padding: 8px 14px; border: 1px solid #397a76; border-radius: 7px; color: #e1fff9; background: var(--accent-strong); cursor: pointer; }
+.project-dialog button:hover { background: #20594f; }
+.project-dialog button.secondary { color: var(--text); background: var(--surface-raised); border-color: var(--border); }
+.project-dialog .project-close { flex: 0 0 38px; padding: 0; border-color: var(--border); color: var(--text-muted); background: transparent; font-size: 24px; }
+.project-dialog :is(button, input, textarea):focus-visible, .project-info-panel button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.project-form, .project-dialog-body { display: grid; gap: 18px; padding: 20px 22px; }
+.project-form fieldset { display: grid; gap: 9px; min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--border); border-radius: 9px; }
+.project-form legend { padding: 0 6px; color: #d7f2ec; font-weight: 650; }
+.project-form legend > span { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 5px; border-radius: 50%; color: var(--accent); background: #7bdbca16; }
+.project-form label { color: #cad9df; }
+.project-form input:not([type='radio']):not([type='checkbox']), .project-form textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px 11px; border: 1px solid #45616d; border-radius: 6px; color: var(--text); background: #0f202d; font: inherit; }
+.project-form textarea { resize: vertical; min-height: 65px; max-height: 160px; }
+.project-form input[readonly] { color: var(--text-muted); background: var(--surface-raised); }
+.project-choice { display: flex; align-items: center; gap: 9px; min-height: 30px; cursor: pointer; }
+.project-choice input { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; }
+.project-task-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 12px; }
+.project-hint { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.project-notice { margin: 0; padding: 10px 12px; border: 1px solid #7bdbca30; border-radius: 7px; color: #bddbd8; background: #7bdbca08; font-size: 12px; line-height: 1.6; }
+.project-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
+.project-empty { padding: 20px 12px; text-align: center; border: 1px dashed var(--border); border-radius: 9px; }
+.project-empty strong { font-size: 15px; }
+.project-empty p { margin-bottom: 0; color: var(--text-muted); line-height: 1.6; }
+#project-current-preview { padding: 14px; border: 1px solid var(--border); border-radius: 9px; }
+#project-current-name { overflow-wrap: anywhere; }
+#project-info-panel { left: 20px; right: auto; top: calc(var(--header-height) + 20px); width: min(360px, calc(100vw - 40px)); border-radius: 12px; }
+#project-info-panel .tool-panel-body { gap: 14px; padding: 16px; }
+.project-info-panel h3, .project-info-panel h4, .project-description { margin: 0; }
+.project-info-panel .project-name { color: #e8f8f5; font-size: 18px; overflow-wrap: anywhere; }
+.project-description { color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.project-details { display: grid; gap: 10px; margin: 0; padding: 12px; border-radius: 7px; background: #0f202d; }
+.project-details > div { display: grid; gap: 4px; }
+.project-details dt { color: var(--text-muted); }
+.project-details dd { margin: 0; color: #deeeeb; }
+.project-task-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.project-task-status { flex-shrink: 0; color: var(--text-muted); font-size: 10px; }
+.project-info-panel .project-actions button { padding: 7px 10px; }
+.project-info-panel button:disabled { color: var(--text-muted); background: var(--surface-raised); border-color: var(--border); cursor: not-allowed; }
+@media (max-width: 480px) {
+  .project-dialog-header { padding: 15px; }
+  .project-form, .project-dialog-body { padding: 15px; }
+  .project-task-options { grid-template-columns: 1fr; }
+}
+/* #endregion */
+
 /* #region 3. Trình bày lớp, bảng dữ liệu và tra cứu */
 /* Các tiện ích PTN dùng cùng panel công cụ của LapTrinhGis. */
 #position-search-panel .coordinate-mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border: 1px solid #34515d; border-radius: 6px; background: #0f202d; }

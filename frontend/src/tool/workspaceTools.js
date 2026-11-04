@@ -6,7 +6,7 @@ import { GEOSERVER_CONFIG } from '../config/layers.js';
 
 //#region 1. Tìm công cụ và thống kê workspace
 const normalize = value => String(value).toLocaleLowerCase('vi-VN').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
-const TOOL_SELECTOR = ':is(.menu-content, .map-actions) :is([data-section], [data-menu-action], [data-tool-action], [data-raster-action], [data-config-action])';
+const TOOL_SELECTOR = ':is(.menu-content, .map-actions) :is([data-section], [data-menu-action], [data-tool-action], [data-raster-action], [data-config-action], [data-project-action])';
 
 export function initWorkspaceTools({ map }) {
   const panel = createToolPanel({

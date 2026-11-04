@@ -40,8 +40,23 @@
   label-follow-line: false;
 
 }
+/* Keep city names inside Cesium's tiles when their anchor is near an edge. */
+[role = 'label'][cap = 1][ma = '01'],
+[role = 'label'][cap = 1][ma = '79'] {
+  label-max-displacement: 80;
+  label-padding: 0;
+}
 [role = 'label'][cap = 0][@sd >= 4000000] {
   label: [ten]; font-size: 15; label-priority: 100;
+}
+/* Ha Noi / Ho Chi Minh City stay visible with country names at startup. */
+[role = 'label'][cap = 1][ma = '01'][@sd >= 4000000] {
+  label: [ten]; font-size: 13; label-priority: 110;
+  label-conflict-resolution: false;
+}
+[role = 'label'][cap = 1][ma = '79'][@sd >= 4000000] {
+  label: [ten]; font-size: 13; label-priority: 110;
+  label-conflict-resolution: false;
 }
 [role = 'label'][cap = 1][@sd < 4000000][@sd >= 250000] {
   label: [ten]; font-size: 13; label-priority: 80;

@@ -1,5 +1,6 @@
 import { GEOSERVER_CONFIG, MAP_LAYER_CONFIGS, rasterPresentationGroup } from '../config/layers.js'
 import { createToolPanel } from './toolUtils.js'
+import { getLocalStyleParams } from '../config/localStyles.js'
 
 const STORAGE_KEY = 'webgis-layer-presentation-v1'
 const COLOR_MAPPED_RASTER_TYPES = new Set(['dem', 'thematic'])
@@ -211,9 +212,8 @@ async function validateSld(layer, sld) {
   }
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value))
   const body = new URLSearchParams(url.search)
-  const usePost = url.href.length >= 8000
-  if (usePost) url.search = ''
-  const response = await fetch(url, usePost ? { method: 'POST', body } : undefined)
+  url.search = ''
+  const response = await fetch(url, { method: 'POST', body })
   const contentType = response.headers.get('content-type') || ''
   if (!response.ok || !contentType.startsWith('image/')) {
     const detail = (await response.text()).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220)
@@ -545,9 +545,7 @@ export function createLayerStyleTool({ thematicGroups, rasterGroup, rasterGroups
     const defaults = layer.get('webgisDefaultWmsParams')
     if (defaults) source.setParams(defaults)
     else {
-      const params = { ...source.getParams() }
-      delete params.SLD_BODY
-      source.setParams(params)
+      source.setParams({ ...source.getParams(), ...getLocalStyleParams(getLayerName(layer), { raster: layer.get('layerKind') === 'raster' }) })
     }
     layer.setOpacity(layer.get('webgisDefaultOpacity') ?? 1)
     const styles = readSavedStyles()
@@ -555,48 +553,12 @@ export function createLayerStyleTool({ thematicGroups, rasterGroup, rasterGroups
     writeSavedStyles(styles)
   }
 
-  async function prepareDefaultLabels(layer) {
-    if (!['vn_tinh', 'vn_xa'].includes(layer.get('configId'))) return
-    const source = layer.getSource()
-    const defaults = { ...source.getParams() }
-    // Khởi tạo trước style đã lưu để nút Mặc định vẫn giữ đúng cấu hình gốc.
-    layer.set('webgisDefaultWmsParams', defaults)
-    try {
-      const url = new URL(source.getUrl(), window.location.href)
-      url.search = new URLSearchParams({ SERVICE: 'WMS', VERSION: '1.1.1', REQUEST: 'GetStyles', LAYERS: getLayerName(layer) }).toString()
-      const response = await fetch(url, { signal: AbortSignal.timeout(15000) })
-      if (!response.ok) return
-      const doc = new DOMParser().parseFromString(await response.text(), 'text/xml')
-      if (doc.getElementsByTagName('parsererror').length) return
-      let removed = 0
-      const serializer = new XMLSerializer()
-      for (const rule of doc.getElementsByTagNameNS('*', 'Rule')) {
-        const seen = new Set()
-        for (const text of [...rule.children].filter(child => child.localName === 'TextSymbolizer')) {
-          const clone = text.cloneNode(true)
-          for (const parameter of [...clone.getElementsByTagNameNS('*', 'CssParameter')]) {
-            if (parameter.getAttribute('name') === 'font-family') parameter.remove()
-          }
-          const key = serializer.serializeToString(clone).replace(/>\s+</g, '><').trim()
-          if (seen.has(key)) { text.remove(); removed++ } else seen.add(key)
-        }
-      }
-      if (!removed) return
-      const sld = serializer.serializeToString(doc).replace(/>\s+</g, '><')
-      const corrected = { ...defaults, SLD_BODY: sld, STYLES: '', TILED: false }
-      layer.set('webgisDefaultWmsParams', corrected)
-      if (!source.getParams().SLD_BODY) source.setParams(corrected)
-    } catch {
-      // Giữ style GeoServer nếu dịch vụ chưa cung cấp được GetStyles.
-    }
-  }
-
   function reset() {
     const layer = currentLayer()
     if (!layer) return
     restoreLayer(layer)
     renderControls()
-    setStatus('Đã khôi phục style mặc định của GeoServer.')
+    setStatus('Đã khôi phục style mặc định từ file trong dự án.')
   }
 
   function applyStoredStyle(layer) {
@@ -668,7 +630,7 @@ export function createLayerStyleTool({ thematicGroups, rasterGroup, rasterGroups
   panel.querySelector('[data-style-reset]').addEventListener('click', reset)
   panel.addEventListener('toolpanelclose', close)
 
-  allVectorLayers().forEach(layer => { prepareDefaultLabels(layer); applyStoredStyle(layer) })
+  allVectorLayers().forEach(applyStoredStyle)
   rasterGroups.forEach(group => {
     group.getLayers().forEach(applyStoredStyle)
     group.getLayers().on('add', (event) => applyStoredStyle(event.element))

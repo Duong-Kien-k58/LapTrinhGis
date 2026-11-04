@@ -7,6 +7,7 @@ import './styles/login.css';
 import './styles/interactions.css';
 import './config/projections.js';
 import { initLoginUI } from './tool/loginTool.js';
+import { initProjectUI } from './tool/projectTool.js';
 import { createPositionSearchTool } from './tool/positionSearchTool.js';
 import { initWorkspaceTools, createSystemTools } from './tool/workspaceTools.js';
 
@@ -64,9 +65,12 @@ import { createDataTableTool } from './tool/dataTableTool.js';
 import { createLayerStyleTool } from './tool/layerStyleTool.js';
 import { createLayerOverviewTool } from './tool/layerOverviewTool.js';
 import { createTerrainAnalysisTool } from './tool/terrainAnalysisTool.js';
+import { configureLocalStyles, getLocalStyleParams } from './config/localStyles.js';
+import compiledLayerStyles from 'virtual:layer-styles';
 //#endregion
 
 //#region 2. KHỞI TẠO LỚP VÀ NHÓM BẢN ĐỒ
+configureLocalStyles(compiledLayerStyles);
 // ================== 2.4. HÀM TẠO SOURCE / STYLE / LAYER ==================
 //Hàm tạo bản đồ nền
 function createBaseLayer(cfg) {
@@ -110,7 +114,7 @@ function createWmsLayer(cfg) {
     url: GEOSERVER_CONFIG.wmsUrl,
     params: {
       LAYERS: cfg.id,
-      ...(isLabelledAdministrativeLayer ? {} : { TILED: true })
+      ...getLocalStyleParams(cfg.id),
     },
     serverType: 'geoserver',
     crossOrigin: 'anonymous'
@@ -170,7 +174,7 @@ function createRasterLayer(cfg) {
       url: GEOSERVER_CONFIG.wmsUrl,
       params: {
         LAYERS: cfg.layerName,
-        TILED: true,
+        ...getLocalStyleParams(cfg.layerName, { raster: true }),
         FORMAT: cfg.format || 'image/png',
         TRANSPARENT: cfg.transparent !== false
       },
@@ -1147,6 +1151,7 @@ map.getControls().forEach(control => {
 });
 initTooltips();
 initLoginUI();
+initProjectUI({ closeMenu });
 
 createCesiumTool(map).then(showStartup3D).catch(error => {
   console.warn('Không thể khởi tạo cảnh 3D:', error);

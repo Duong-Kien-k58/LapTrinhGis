@@ -1,0 +1,54 @@
+/* =========================================================
+   STYLE CSS CHO LOP nenbien
+   Phan loai mau theo truong dosau
+   Kieu du lieu: Polygon
+   ========================================================= */
+
+[dosau = '<5000'] {
+  fill: #0014ff;
+}
+
+[dosau = '0-20'] {
+  fill: #00dbff;
+}
+
+[dosau = '20-50'] {
+  fill: #00d2ff;
+}
+
+[dosau = '50-100'] {
+  fill: #00c8ff;
+}
+
+[dosau = '100-200'] {
+  fill: #00beff;
+}
+
+[dosau = '200-500'] {
+  fill: #00aaff;
+}
+
+[dosau = '500-1000'] {
+  fill: #0096ff;
+}
+
+[dosau = '1000-2000'] {
+  fill: #0082ff;
+}
+
+[dosau = '2000-3000'] {
+  fill: #0064ff;
+}
+
+[dosau = '3000-4000'] {
+  fill: #0046ff;
+}
+
+[dosau = '4000-5000'] {
+  fill: #0032ff;
+}
+
+/* Gia tri con lai / khong khop dieu kien */
+* {
+  fill: #08306b;
+}

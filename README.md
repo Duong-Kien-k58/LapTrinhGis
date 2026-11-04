@@ -98,7 +98,8 @@ Khi dữ liệu đã đủ, chạy:
 Mở terminal khác tại `frontend`, chạy `npm run dev`. Kiểm tra các lớp
 `webgis:tthc`, `webgis:nuocngoai`, `webgis:ranhgioi` đã publish đúng trên GeoServer;
 `ranhgioi` là lớp ranh giới hiển thị mặc định của bản mới. Git không cập nhật
-datastore, layer hay style của GeoServer. Các DEM 10 m theo tỉnh chỉ dùng được
+datastore hay layer của GeoServer; style ứng dụng nằm trong `styleLayer/` và được
+cập nhật cùng mã nguồn. Các DEM 10 m theo tỉnh chỉ dùng được
 sau khi publish dữ liệu riêng, không bắt buộc để mở ứng dụng.
 
 Để dùng phân tích độ dốc trên máy khác, bổ sung `DEM_GDAL_PYTHON` vào `.env`,
@@ -133,8 +134,18 @@ cd LapTrinhGis
 4. Mở GeoServer tại `http://localhost:8080/geoserver` để kiểm tra dịch vụ đang
    chạy.
 
-Các style CSS được quản lý trực tiếp trong GeoServer → Styles, workspace `webgis`:
-`a_nuocngoai_css`, `a_ranhgioi_css` và `a_tthc_css`. Chỉnh sửa và lưu CSS tại đó.
+Style bản đồ được quản lý trong thư mục [`styleLayer/`](styleLayer/README.md),
+mỗi lớp một file GeoServer CSS. Khi chạy dev, sửa/thêm file sẽ tự chuyển và
+tải lại trang; bản triển khai cần build lại. Ứng dụng gửi style trong từng yêu cầu WMS cho
+cả 2D/3D, không đọc style mặc định từ GeoServer. GeoServer vẫn cần chạy để
+cung cấp dữ liệu và dựng ảnh bản đồ. Nút **Mặc định** trong công cụ trình bày
+khôi phục style từ file; cấu hình trình bày riêng đã lưu vẫn được ưu tiên.
+
+Bộ chuyển CSS dùng Java có sẵn và thư viện của GeoServer CSS trên máy.
+Nếu GeoServer không nằm ở `C:/Program Files/GeoServer`, đặt `GEOSERVER_LIB_DIR`
+trong `.env` tới `webapps/geoserver/WEB-INF/lib`; `STYLE_JAVA` cho phép chọn
+Java riêng. Không cần tạo hoặc gán style tùy chỉnh trên GeoServer. Các style
+hệ thống vẫn được giữ vì GeoServer cần một style mặc định nội bộ cho mỗi lớp.
 
 ### 3. Cấu hình môi trường và chạy backend Django
 
@@ -314,6 +325,20 @@ Mở terminal thứ hai tại thư mục gốc và chạy backend:
 
 ## Sử dụng nhanh
 
+### Giao diện Dự án — bước 1
+
+Menu **Dự án** nằm đầu menu chức năng, gồm **Tạo dự án mới / Mở dự án /
+Thoát dự án**. Tạo mới có ba phần khai báo: tài khoản và thông tin dự án,
+cách chọn phạm vi, danh sách nhiệm vụ. Nhập tên rồi chọn **Xem trước dự án**
+để mở bảng thông tin; có thể chỉnh lại khai báo hoặc mở lại bảng qua **Mở dự án**.
+**Thoát dự án** cho phép đóng bản xem trước sau khi xác nhận.
+
+Đây là khung giao diện: chưa xác thực tài khoản, lấy/vẽ phạm vi, gọi công cụ
+nhiệm vụ hoặc lưu vào backend. Nút **Lưu dự án** hiện bị vô hiệu hóa. Thông tin
+xem trước chỉ nằm trong bộ nhớ của trang, mất khi tải lại; chưa thay đổi dữ liệu GIS.
+
+### Thao tác bản đồ
+
 1. Bật PostgreSQL và GeoServer, chạy Django và Vite, mở địa chỉ Vite in trong terminal.
 2. Trong mục lục lớp, bật/tắt lớp và nhóm; kéo để sắp xếp thứ tự hiển thị.
 3. Mở menu **Xem dữ liệu**, chọn tab **Vector** hoặc **Raster** và lớp cần xem.
@@ -383,7 +408,8 @@ công cụ báo lỗi thay vì gán cao độ 0. Đóng công cụ hoặc chuy�
 kết quả đang chờ tải.
 
 Kiểm thử tính toán địa hình, đồng bộ lớp và tải WMS: `npm test`
-tại thư mục `frontend`. Các test nằm trong `temp/tests/frontend/unit/`.
+tại thư mục `frontend`. Các test địa hình/WMS hiện có nằm trong
+`temp/tests/frontend/unit/`; kiểm thử style từ file nằm trong `frontend/tests/`.
 
 ## Tổ chức mã nguồn frontend
 

@@ -1,11 +1,14 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 import { fileURLToPath } from 'node:url';
+import { layerStylesPlugin } from './build/layerStyles.js';
 
 const cesiumSource = 'node_modules/cesium/Build/Cesium';
 const cesiumBaseUrl = 'cesiumStatic';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, fileURLToPath(new URL('..', import.meta.url)), '');
+  return {
   envDir: fileURLToPath(new URL('..', import.meta.url)),
   cacheDir: fileURLToPath(new URL('../temp/vite-cache', import.meta.url)),
   build: {
@@ -13,8 +16,14 @@ export default defineConfig({
     emptyOutDir: true,
   },
   plugins: [
+    layerStylesPlugin({ libFolder: env.GEOSERVER_LIB_DIR, java: env.STYLE_JAVA }),
     viteStaticCopy({
       targets: [
+        {
+          src: '../styleLayer/assets/*',
+          dest: 'style-assets',
+          rename: { stripBase: true }
+        },
         {
           src: `${cesiumSource}/ThirdParty/**/*`,
           dest: cesiumBaseUrl,
@@ -42,4 +51,5 @@ export default defineConfig({
   define: {
     CESIUM_BASE_URL: JSON.stringify('/cesiumStatic/')
   }
+  };
 });
