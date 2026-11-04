@@ -8,7 +8,6 @@
 *[@scale <= 250000] {
   fill: none;
   stroke: none;
-  label: "";
 }
 
 /* Nét bao chung gi? ranh gi?i r? ràng nhýng không n?ng màu. */
@@ -55,25 +54,4 @@
 [ma_tinh = '86'][@scale <= 6000000][@scale > 250000] { fill: #efc0d1; }
 [ma_tinh = '91'][@scale <= 6000000][@scale > 250000] { fill: #d8c0ec; }
 [ma_tinh = '92'][@scale <= 6000000][@scale > 250000] { fill: #f2c1cb; }
-[ma_tinh = '96'][@scale <= 6000000][@scale > 250000] { fill: #eab8da; }
-
-/* Nh?n t?i trên n?n pastel, có vi?n sáng ð? r? trên m?i màu t?nh. */
-*[@scale <= 6000000][@scale > 250000] {
-  label: [ten_tinh];
-  font-family: 'Arial';
-  font-size: 13;
-  font-style: normal;
-  font-weight: bold;
-  font-fill: #243746;
-  halo-color: #f8fbfd;
-  halo-radius: 1.4;
-  label-anchor: 0.5 0.5;
-  label-offset: 0 0;
-  /* M?i t?nh ch? ð?t m?t nh?n; ch? d?ch chuy?n nh? khi c?n tránh va ch?m. */
-  label-max-displacement: 30;
-  label-goodness-of-fit: 0.5;
-  label-conflict-resolution: false;
-  label-remove-overlaps: false;
-  label-padding: 0;
-  label-group: false;
-}
+[ma_tinh = '96'][@scale <= 6000000][@scale > 250000] { fill: #eab8da; }

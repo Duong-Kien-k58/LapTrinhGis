@@ -7,7 +7,6 @@
 *[@scale > 250000] {
   fill: none;
   stroke: none;
-  label: "";
 }
 
 /* Ki?u vùng và vi?n chung. */
@@ -53,40 +52,4 @@
 [ma_tinh = '86'][@scale <= 250000] { fill: #ddefdc; }
 [ma_tinh = '91'][@scale <= 250000] { fill: #f1dddd; }
 [ma_tinh = '92'][@scale <= 250000] { fill: #d8f0e9; }
-[ma_tinh = '96'][@scale <= 250000] { fill: #f2f1d8; }
-
-/* Ch? rule này t?o TextSymbolizer: m?i x? có ðúng m?t nh?n. */
-[ma_tinh = '01'][@scale <= 250000], [ma_tinh = '04'][@scale <= 250000],
-[ma_tinh = '08'][@scale <= 250000], [ma_tinh = '11'][@scale <= 250000],
-[ma_tinh = '12'][@scale <= 250000], [ma_tinh = '14'][@scale <= 250000],
-[ma_tinh = '15'][@scale <= 250000], [ma_tinh = '19'][@scale <= 250000],
-[ma_tinh = '20'][@scale <= 250000], [ma_tinh = '22'][@scale <= 250000],
-[ma_tinh = '24'][@scale <= 250000], [ma_tinh = '25'][@scale <= 250000],
-[ma_tinh = '31'][@scale <= 250000], [ma_tinh = '33'][@scale <= 250000],
-[ma_tinh = '37'][@scale <= 250000], [ma_tinh = '38'][@scale <= 250000],
-[ma_tinh = '40'][@scale <= 250000], [ma_tinh = '42'][@scale <= 250000],
-[ma_tinh = '44'][@scale <= 250000], [ma_tinh = '46'][@scale <= 250000],
-[ma_tinh = '48'][@scale <= 250000], [ma_tinh = '51'][@scale <= 250000],
-[ma_tinh = '52'][@scale <= 250000], [ma_tinh = '56'][@scale <= 250000],
-[ma_tinh = '66'][@scale <= 250000], [ma_tinh = '68'][@scale <= 250000],
-[ma_tinh = '75'][@scale <= 250000], [ma_tinh = '79'][@scale <= 250000],
-[ma_tinh = '80'][@scale <= 250000], [ma_tinh = '82'][@scale <= 250000],
-[ma_tinh = '86'][@scale <= 250000], [ma_tinh = '91'][@scale <= 250000],
-[ma_tinh = '92'][@scale <= 250000], [ma_tinh = '96'][@scale <= 250000] {
-  label: [ten_xa];
-  font-family: 'Arial';
-  font-size: 14;
-  font-style: normal;
-  font-weight: bold;
-  font-fill: #3c4043;
-  halo-color: #ffffff;
-  halo-radius: 1.4;
-  label-anchor: 0.5 0.5;
-  label-offset: 0 0;
-  label-max-displacement: 30;
-  label-fit-goodness: 0.5;
-  label-conflict-resolution: true;
-  label-remove-overlaps: true;
-  label-padding: 8;
-  label-group: false;
-}
+[ma_tinh = '96'][@scale <= 250000] { fill: #f2f1d8; }
