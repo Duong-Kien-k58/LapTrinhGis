@@ -156,7 +156,9 @@ DEM_UPLOAD_ROOT = TEMP_ROOT / 'dem-uploads'
 DEM_UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024
 DEM_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 DEM_UPLOAD_TTL_SECONDS = 24 * 60 * 60
-DEM_GDAL_PYTHON = os.getenv('DEM_GDAL_PYTHON', r'C:\Program Files\QGIS 3.40.3\bin\python3.exe')
+from .runtime_paths import find_gdal_python
+
+DEM_GDAL_PYTHON = find_gdal_python()
 CORS_ALLOW_ALL_ORIGINS = env_bool('CORS_ALLOW_ALL_ORIGINS', True)
 CORS_ALLOW_CREDENTIALS = env_bool('CORS_ALLOW_CREDENTIALS', True)
 CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173')

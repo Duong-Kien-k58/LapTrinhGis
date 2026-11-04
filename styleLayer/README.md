@@ -49,10 +49,10 @@ Vite chuyển CSS thành SLD **trong bộ nhớ** lúc khởi động/build và 
 không có thao tác lưu style lên GeoServer. Yêu cầu WMS 2D/3D gửi toàn bộ style
 đã chuyển bằng POST. GeoServer vẫn cung cấp dữ liệu và dựng ảnh bản đồ.
 
-Bộ chuyển dùng Java trong PATH và các JAR của GeoServer CSS đã cài trên máy
-(`gt-css`, `gt-xml`, Janino và các thư viện cùng bộ). Mặc định trên Windows:
-`C:/Program Files/GeoServer/webapps/geoserver/WEB-INF/lib`.
-Nếu cài ở nơi khác, đặt `GEOSERVER_LIB_DIR` và khi cần `STYLE_JAVA` trong `.env`.
+Bộ chuyển tự tìm Java và các JAR GeoServer CSS đã cài trên máy (`gt-css`,
+`gt-xml`, Janino và các thư viện cùng bộ) tại các thư mục cài phổ biến.
+Không cần cấu hình đường dẫn khi dùng vị trí cài thông thường. Nếu cài ở thư mục
+riêng, có thể ghi đè bằng `GEOSERVER_LIB_DIR` và `STYLE_JAVA` trong `.env`.
 Không cần cài JDK; JRE đang dùng cho GeoServer là đủ. Bộ chuyển không cần
 dịch vụ GeoServer đang chạy. Máy chỉ phục vụ bản build không cần Java/JAR này.
 

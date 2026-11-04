@@ -2,18 +2,19 @@ import { existsSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findGeoServerLib, findJava } from './runtimePaths.js';
 
 export const styleFolder = fileURLToPath(new URL('../../styleLayer/', import.meta.url));
 const javaSource = fileURLToPath(new URL('./CompileStyles.java', import.meta.url));
 
 export function compileLayerStyles(options = {}) {
   const libFolder = options.libFolder || process.env.GEOSERVER_LIB_DIR
-    || path.join(process.env.GEOSERVER_HOME || 'C:/Program Files/GeoServer', 'webapps/geoserver/WEB-INF/lib');
+    || findGeoServerLib();
   const jars = existsSync(libFolder) ? readdirSync(libFolder) : [];
   if (!jars.some(name => /^gt-css-.*\.jar$/.test(name)) || !jars.some(name => /^janino-.*\.jar$/.test(name))) {
-    throw new Error('Không tìm thấy bộ chuyển GeoServer CSS. Đặt GEOSERVER_LIB_DIR trong .env tới thư mục WEB-INF/lib có gt-css và Janino.');
+    throw new Error('Không tìm thấy GeoServer CSS trong các thư mục cài phổ biến. Hãy cài CSS extension đúng phiên bản GeoServer. Nếu cài ở thư mục riêng, đặt GEOSERVER_LIB_DIR tới WEB-INF/lib.');
   }
-  const java = options.java || process.env.STYLE_JAVA || 'java';
+  const java = options.java || process.env.STYLE_JAVA || findJava();
   const result = spawnSync(java, [
     '-Djava.awt.headless=true', '-Dfile.encoding=UTF-8', '-cp', path.join(libFolder, '*'),
     'org.codehaus.janino.SimpleCompiler', javaSource, 'CompileStyles', options.folder || styleFolder,

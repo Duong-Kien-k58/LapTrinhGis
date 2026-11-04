@@ -1,311 +1,178 @@
 # WebGIS
 
-Ứng dụng bản đồ WebGIS dùng OpenLayers/Cesium, Django, PostGIS và GeoServer.
-Hướng dẫn bên dưới dành cho cài đặt và chạy phát triển trên Windows bằng PowerShell.
+Ứng dụng bản đồ dùng OpenLayers/Cesium, Django, PostGIS và GeoServer.
+Hướng dẫn dưới đây dành cho Windows/PowerShell, chạy trên cùng một máy.
 
-## Bắt đầu
+**GitHub chỉ chứa code và style. Database, ảnh raster và DEM phải chuyển riêng
+từ máy đang có đầy đủ dữ liệu.**
 
-1. Cài các phần mềm trong [Yêu cầu trước khi cài](#yêu-cầu-trước-khi-cài).
-2. [Tải mã nguồn và chuẩn bị dữ liệu](#cài-đặt).
-3. Tạo `.env` từ `.env.example`, cấu hình database và tài khoản GeoServer.
-4. Chạy Django và Vite ở hai terminal riêng; mở `http://localhost:5173`.
+- [Cài mới](#cài-mới)
+- [Cập nhật máy đã cài](#cập-nhật-máy-đã-cài)
+- [Chạy chương trình](#chạy-chương-trình-mỗi-lần-sử-dụng)
 
-## Chức năng đối chiếu PTN
+## Yêu cầu
 
-Đã nối trình bày vector/raster bằng SLD (gồm chuyên đề), overview theo lớp,
-tra cứu pixel raster, tìm vị trí WGS84/VN2000, tìm công cụ và bảng hỗ trợ trạng thái
-dịch vụ. Mục lục lưu thứ tự, nhóm, visibility; các panel hỗ trợ kéo và nhớ vị trí.
-Tìm thuộc tính bao gồm mọi trường của các lớp vector, giữ luồng CRUD và công cụ
-3D/PDF hiện có. Có giao diện đăng nhập qua biểu tượng tài khoản ở góc trên bên
-phải. Giao diện có đăng nhập, đăng ký, quên mật khẩu, lựa chọn Google/Microsoft,
-hiện/ẩn mật khẩu, cảnh báo Caps Lock và kiểm tra độ mạnh mật khẩu khi đăng ký.
-Các thao tác xác thực hiện chưa kết nối backend và không gửi thông tin tài khoản.
-Nếu chọn **Ghi nhớ tài khoản**, chỉ tên đăng nhập được lưu trong trình duyệt;
-mật khẩu không được lưu. Bỏ chọn để xóa tên đăng nhập đã ghi nhớ.
+- Git, Node.js ≥ 22.12, Python ≥ 3.12.
+- PostgreSQL có PostGIS; GeoServer và Java tương thích.
+- GeoServer CSS extension **đúng phiên bản GeoServer** để chuyển style.
+- QGIS có Python/GDAL để phân tích DEM; Internet và token Cesium ion cho địa hình 3D.
 
-Thiết kế tham khảo bố cục hai cột của
-[shadcn/ui Authentication](https://ui.shadcn.com/blocks/authentication) và
-[Split Screen Login Page trên Dribbble](https://dribbble.com/shots/6668415-Split-Screen-Login-Page).
-Đồ họa bản đồ SVG được tạo riêng cho WebGIS, không phụ thuộc dịch vụ ảnh bên ngoài.
+Nên dùng thư mục mặc định của bộ cài. Chương trình tự tìm Java, thư viện GeoServer
+CSS và Python QGIS; không cần thêm ba biến đường dẫn vào `.env` khi cài thông thường.
 
-Ứng dụng WebGIS gồm giao diện bản đồ, API Django và các dịch vụ bản đồ
-GeoServer/PostGIS. Frontend hiển thị, tra cứu và biên tập các lớp dữ liệu địa
-lý; backend cung cấp API CRUD cho các lớp được cho phép.
+## Cài mới
 
-## Thành phần
-
-- **Frontend:** Vite, OpenLayers, Cesium và các thư viện JavaScript khác.
-- **Backend:** Python, Django, Django REST Framework.
-- **Dữ liệu không gian:** PostgreSQL + PostGIS.
-- **Dịch vụ bản đồ:** GeoServer (WMS/WFS).
-
-## Yêu cầu trước khi cài
-
-Cài các phần mềm sau trên máy mới:
-
-- [Git](https://git-scm.com/downloads)
-- Node.js 22.12 trở lên (có thể dùng Node.js 24; Cesium yêu cầu Node.js 22+)
-- Python 3.12 trở lên
-- PostgreSQL kèm tiện ích PostGIS
-- GeoServer (mặc định chạy ở cổng `8080`)
-- Java tương thích với phiên bản GeoServer đã cài nếu chạy GeoServer độc lập.
-
-Kiểm tra các công cụ đã có trong PATH:
-
-```powershell
-git --version
-node --version
-npm --version
-python --version
-```
-
-> Dữ liệu GIS và cơ sở dữ liệu không được lưu trong repository. Muốn bản đồ
-> hiển thị đầy đủ, hãy xin file dữ liệu hoặc bản sao lưu database từ người quản
-> lý dự án.
-
-## Nâng cấp máy đã cài bản cũ và bổ sung đầy đủ dữ liệu
-
-Cần cập nhật **code + database + raster/DEM + GeoServer**. `git pull` chỉ cập nhật
-mã nguồn và style, không tự bổ sung dữ liệu GIS. Các bước dưới đây dành cho Windows.
-
-1. **Chuẩn bị từ máy đang chạy đầy đủ:** backup toàn bộ database PostGIS bằng
-   pgAdmin, định dạng **Custom**, gồm cấu trúc, dữ liệu, view và `django_migrations`.
-   Chép riêng các GeoTIFF: ảnh nền, SRTM 30 m và 34 DEM tỉnh; ghi lại phiên bản
-   GeoServer và cấu hình store/layer.
-2. **Sao lưu máy nhận:** dừng Django/Vite; sao lưu database cũ, `.env` và thư mục
-   dữ liệu GeoServer. Sao lưu hoặc commit code chỉnh riêng trước khi pull.
-3. **Cập nhật code và thư viện** tại thư mục gốc (Node.js ≥ 22.12, Python ≥ 3.12;
-   giả định đã có môi trường `backend/venv`):
-
-   ```powershell
-   git pull --ff-only origin main
-   .\backend\venv\Scripts\python.exe -m pip install -r backend/requirements.txt
-   cd frontend
-   npm ci
-   cd ..
-   ```
-
-4. **Khôi phục database:** trên PostgreSQL có PostGIS, tạo database mới, ví dụ
-   `webgis_full`, rồi Restore bản backup đầy đủ bằng pgAdmin. Nếu tài khoản hai máy
-   khác nhau, bỏ khôi phục owner/privilege. Kiểm tra log Restore; giữ database cũ
-   để đối chiếu.
-5. **Chép raster/DEM** vào thư mục cố định, ví dụ `D:\WebGISData`, không đặt trong
-   `temp/`. GeoServer và Django phải đọc được tệp. DEM dùng phân tích phải là
-   GeoTIFF cao độ, giữ đúng CRS, NoData và đơn vị cao độ.
-6. **Thiết lập GeoServer:** dùng workspace `webgis`, kết nối PostGIS Store tới
-   database vừa restore; publish hoặc cập nhật các lớp sau:
-
-   | Loại | Tên lớp |
-   | --- | --- |
-   | Vector | `ranhgioi`, `nenbien`, `khung25k`, `nuocngoai`, `tthc`, `vn_tinh`, `vn_xa`, `qlo`, `tinhlo` |
-   | Raster | `fast_alpha`, `SRTM_30_VN_UTM` và 34 lớp `dem_*` đúng tên trong `frontend/src/config/layers.js` |
-
-   Kiểm tra CRS, tính bounding box và thử **Layer Preview**. DEM dùng phân tích
-   cần store **GeoTIFF cục bộ với đường dẫn tuyệt đối**, ví dụ
-   `file:///D:/WebGISData/dem10m/ten_file.tif`. Sửa các đường dẫn cũ theo máy nhận.
-7. **Cấu hình `.env`:** giữ file đang dùng, đối chiếu `.env.example` và cập nhật:
-
-   | Biến | Giá trị cần thiết lập |
-   | --- | --- |
-   | `POSTGRES_*` | Database mới và tài khoản PostgreSQL trên máy nhận |
-   | `GEOSERVER_REST_URL`, `GEOSERVER_WORKSPACE` | Mặc định `http://localhost:8080/geoserver/rest`, `webgis` |
-   | `GEOSERVER_ADMIN_USER`, `GEOSERVER_ADMIN_PASSWORD` | Tài khoản quản trị GeoServer |
-   | `DEM_GDAL_PYTHON` | Đường dẫn Python có GDAL của QGIS trên máy nhận |
-   | `GEOSERVER_LIB_DIR` | Thư mục `webapps/geoserver/WEB-INF/lib` thực tế |
-   | `STYLE_JAVA` | Để trống nếu Java đã có trong PATH; nếu chưa, trỏ tới `java.exe` |
-   | `VITE_CESIUM_ION_TOKEN` | Token Cesium để dùng các dịch vụ địa hình 3D |
-
-   Cài **GeoServer CSS extension đúng phiên bản GeoServer** nếu còn thiếu.
-   Style ứng dụng được lấy từ `styleLayer/`, không cần tạo lại từng style trên
-   GeoServer. Địa hình Cesium World Terrain và DEM GeoTIFF là hai nguồn riêng.
-8. **Kiểm tra và chạy backend** tại thư mục gốc:
-
-   ```powershell
-   .\backend\venv\Scripts\python.exe backend/manage.py check
-   .\backend\venv\Scripts\python.exe backend/manage.py migrate --plan
-   ```
-
-   Migration chỉ quản lý metadata raster; dữ liệu vector được nhập và publish
-   riêng trên GeoServer. Các bước thay lớp/căn chỉnh GIS cũ đã được thay bằng
-   mốc tương thích, không cần bảng nguồn cũ hoặc schema backup để cài đặt.
-   Giữ `django_migrations` khi backup/restore để bảo toàn lịch sử nâng cấp;
-   không cần dùng `--fake`.
-   Schema `reference_backup_20261025` nếu có chỉ là bản sao dữ liệu cũ,
-   ứng dụng không sử dụng và migration mới không tạo lại schema này.
-
-   ```powershell
-   .\backend\venv\Scripts\python.exe backend/manage.py migrate
-   .\backend\venv\Scripts\python.exe backend/manage.py runserver
-   ```
-
-   Mở terminal thứ hai tại thư mục gốc:
-
-   ```powershell
-   cd frontend
-   npm run dev
-   ```
-
-9. **Nghiệm thu:** giữ PostgreSQL, GeoServer, Django và Vite cùng chạy; mở
-   `http://localhost:5173`. Bật từng lớp vector/raster/DEM, xem bảng thuộc tính,
-   tra cứu pixel, thử độ dốc/hướng dốc trên vùng nhỏ và kiểm tra 3D/mặt cắt.
-   Nếu còn style riêng từ bản cũ, dùng nút **Mặc định** trong công cụ trình bày.
-
-**Giới hạn hiện tại:** đăng nhập chưa kết nối xác thực backend; menu Dự án mới
-là bản xem trước, chưa lưu dự án vào backend. Cài đủ dữ liệu không bổ sung các
-chức năng chưa được triển khai này.
-
-## Cài đặt
-
-### 1. Tải mã nguồn
+### 1. Tải code và cài thư viện
 
 ```powershell
 git clone https://github.com/Duong-Kien-k58/LapTrinhGis.git
 cd LapTrinhGis
+python -m venv backend\venv
+.\backend\venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+cd frontend
+npm ci
+cd ..
 ```
 
-### 2. Chuẩn bị PostGIS và GeoServer
+### 2. Chuẩn bị database, raster/DEM và GeoServer
 
-1. Tạo database PostgreSQL tên `webgis` và bật extension PostGIS:
+1. Trên máy nguồn, backup **toàn bộ database** bằng pgAdmin, định dạng Custom,
+   gồm cấu trúc, dữ liệu, view và `django_migrations`; chép riêng các GeoTIFF.
+   Trong Backup: bật **Pre-data, Data, Post-data**, tắt **Only data/Only schemas**,
+   không giới hạn bảng trong Objects; chờ thông báo thành công.
+2. Trên máy nhận có PostGIS, tạo database mới, ví dụ `webgis_full`, rồi Restore
+   bản backup. Nếu khác tài khoản, bỏ khôi phục owner/privilege; kiểm tra log Restore.
+3. Chép ảnh nền, SRTM 30 m và 34 DEM tỉnh vào thư mục cố định, ví dụ
+   `D:\WebGISData`, không đặt trong `temp/`.
+4. Mở `http://localhost:8080/geoserver`, tạo workspace **`webgis`**, kết nối
+   PostGIS Store tới database vừa restore và publish các lớp:
 
-   ```sql
-   CREATE DATABASE webgis;
-   \c webgis
-   CREATE EXTENSION postgis;
-   ```
+   | Loại | Tên lớp trên GeoServer |
+   | --- | --- |
+   | Vector | `ranhgioi`, `nenbien`, `khung25k`, `nuocngoai`, `tthc`, `vn_tinh`, `vn_xa`, `qlo`, `tinhlo` |
+   | Raster | `fast_alpha`, `SRTM_30_VN_UTM` và 34 lớp `dem_*` đúng tên trong `frontend/src/config/layers.js` |
 
-2. Nhập bản sao lưu database/dữ liệu GIS được cung cấp vào database `webgis`.
-   Các lớp có thể biên tập gồm: `tthc`, `tinhlo`, `vn_tinh`, `vn_xa`, `qlo`,
-   `nenbien` và `nuocngoai`.
-3. Trong GeoServer, tạo workspace `webgis`, kết nối PostGIS datastore tới
-   database trên, rồi publish các layer cần dùng. Các lớp raster được cấu hình
-   trong dự án là `fast_alpha` và `SRTM_30_VN_UTM`.
-4. Mở GeoServer tại `http://localhost:8080/geoserver` để kiểm tra dịch vụ đang
-   chạy.
+5. Kiểm tra CRS, tính bounding box, thử **Layer Preview**. DEM phân tích phải là
+   GeoTIFF cao độ; dùng store **GeoTIFF cục bộ với đường dẫn tuyệt đối**, ví dụ
+   `file:///D:/WebGISData/dem10m/ten_file.tif`. GeoServer và Django đều phải đọc được tệp.
 
-Style bản đồ được quản lý trong thư mục [`styleLayer/`](styleLayer/README.md),
-mỗi lớp một file GeoServer CSS. Khi chạy dev, sửa/thêm file sẽ tự chuyển và
-tải lại trang; bản triển khai cần build lại. Ứng dụng gửi style trong từng yêu cầu WMS cho
-cả 2D/3D, không đọc style mặc định từ GeoServer. GeoServer vẫn cần chạy để
-cung cấp dữ liệu và dựng ảnh bản đồ. Nút **Mặc định** trong công cụ trình bày
-khôi phục style từ file; cấu hình trình bày riêng đã lưu vẫn được ưu tiên.
+Style nằm trong [`styleLayer/`](styleLayer/README.md), được chuyển tự động khi
+chạy frontend. Không cần tạo lại style tùy chỉnh trên GeoServer; giữ style hệ thống.
 
-Bộ chuyển CSS dùng Java có sẵn và thư viện của GeoServer CSS trên máy.
-Nếu GeoServer không nằm ở `C:/Program Files/GeoServer`, đặt `GEOSERVER_LIB_DIR`
-trong `.env` tới `webapps/geoserver/WEB-INF/lib`; `STYLE_JAVA` cho phép chọn
-Java riêng. Không cần tạo hoặc gán style tùy chỉnh trên GeoServer. Các style
-hệ thống vẫn được giữ vì GeoServer cần một style mặc định nội bộ cho mỗi lớp.
+### 3. Cấu hình `.env`
 
-### 3. Cấu hình môi trường và chạy backend Django
-
-Tại thư mục gốc dự án, tạo file cấu hình (chỉ làm lần đầu):
+Tại thư mục gốc, chỉ sao chép file mẫu nếu **chưa có `.env`**:
 
 ```powershell
 Copy-Item .env.example .env
 notepad .env
 ```
 
-Điền `DJANGO_SECRET_KEY` bằng chuỗi bí mật riêng; điền `POSTGRES_*` theo database
-đã chuẩn bị. Để thêm/sửa/xóa raster, điền thêm `GEOSERVER_ADMIN_USER` và
-`GEOSERVER_ADMIN_PASSWORD` bằng tài khoản GeoServer. Lưu file trước khi chạy Django.
+Điền các giá trị theo máy đang cài:
 
-Mở một cửa sổ PowerShell tại thư mục dự án:
+| Biến | Nội dung |
+| --- | --- |
+| `DJANGO_SECRET_KEY` | Chuỗi bí mật riêng, thay giá trị mẫu |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | Database đã restore và tài khoản PostgreSQL |
+| `GEOSERVER_REST_URL`, `GEOSERVER_WORKSPACE` | Mặc định `http://localhost:8080/geoserver/rest`, `webgis` |
+| `GEOSERVER_ADMIN_USER`, `GEOSERVER_ADMIN_PASSWORD` | Tài khoản GeoServer, dùng quản trị raster và đọc DEM đã publish |
+| `VITE_CESIUM_ION_TOKEN` | Token Cesium ion cho dịch vụ địa hình/công trình 3D |
+
+<details>
+<summary>Chỉ khi cài phần mềm ở thư mục riêng</summary>
+
+Cơ chế tự tìm kiểm tra Program Files, Programs của người dùng và các thư mục
+QGIS/OSGeo4W hoặc GeoServer/Tomcat tại gốc ổ C/D/E. Java còn được tìm qua PATH,
+JAVA_HOME/JRE_HOME và các thư mục Java phổ biến. Không quét toàn bộ ổ đĩa.
+
+Nếu không tìm được bộ cài của máy, có thể thêm các biến tùy chọn vào `.env`:
+
+```dotenv
+DEM_GDAL_PYTHON='D:/duong-dan-QGIS/bin/python3.exe'
+GEOSERVER_LIB_DIR='D:/duong-dan-GeoServer/webapps/geoserver/WEB-INF/lib'
+STYLE_JAVA='D:/duong-dan-Java/bin/java.exe'
+```
+
+Thay đường dẫn ví dụ bằng vị trí thực tế; chỉ thêm biến cần ghi đè.
+
+</details>
+
+Không đưa `.env` lên GitHub. Sau khi sửa cấu hình, khởi động lại Django và Vite.
+Nếu dùng cổng frontend khác, cập nhật `CORS_ALLOWED_ORIGINS` và `CSRF_TRUSTED_ORIGINS`.
+
+### 4. Kiểm tra và tạo bảng ứng dụng
+
+Chạy tại thư mục gốc:
+
+```powershell
+.\backend\venv\Scripts\python.exe backend/manage.py check
+.\backend\venv\Scripts\python.exe backend/manage.py migrate
+```
+
+Migration quản lý metadata raster; không tự nhập dữ liệu GIS, chép DEM hoặc
+publish lớp. Giữ lịch sử `django_migrations` khi backup/restore, không cần dùng `--fake`.
+
+## Cập nhật máy đã cài
+
+1. Dừng Django/Vite bằng `Ctrl+C`; sao lưu database, `.env` và cấu hình GeoServer.
+   Sao lưu hoặc commit code chỉnh riêng trước khi pull.
+2. Tại **thư mục gốc `LapTrinhGis`**, chạy:
+
+   ```powershell
+   git pull --ff-only origin main
+   .\backend\venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+   .\backend\venv\Scripts\python.exe backend/manage.py check
+   .\backend\venv\Scripts\python.exe backend/manage.py migrate
+   cd frontend
+   npm ci
+   cd ..
+   ```
+
+3. Giữ `.env` hiện có, đối chiếu `.env.example` để bổ sung biến còn thiếu.
+   Ba biến đường dẫn Java/GeoServer/QGIS không còn bắt buộc; nếu từng điền đường
+   dẫn sai của máy khác, xóa dòng tương ứng để ứng dụng tự tìm lại.
+4. Nếu thiếu dữ liệu: thực hiện bước **2 của phần Cài mới** để restore database
+   đầy đủ vào database mới, chép DEM và cập nhật GeoServer; sửa `POSTGRES_*` theo
+   database mới rồi chạy lại `check` và `migrate`. Không ghi đè database cũ chưa sao lưu.
+5. Khởi động ứng dụng theo phần dưới. Nếu chỉ cập nhật code/style và dữ liệu đã đủ,
+   không cần restore database hoặc publish lại các lớp.
+
+## Chạy chương trình mỗi lần sử dụng
+
+Bật PostgreSQL và GeoServer. Mở **hai terminal riêng từ thư mục gốc**:
+
+**Terminal 1 — backend:**
 
 ```powershell
 cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python manage.py migrate
-python manage.py runserver
-```
-
-API sẽ chạy tại `http://localhost:8000`.
-
-Nếu PowerShell chặn `Activate.ps1`, có thể chạy trực tiếp Python trong môi trường
-ảo, không cần kích hoạt (vẫn ở thư mục `backend`):
-
-```powershell
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-.\venv\Scripts\python.exe manage.py migrate
 .\venv\Scripts\python.exe manage.py runserver
 ```
 
-### 4. Chạy frontend
-
-Mở **một cửa sổ PowerShell khác** tại thư mục dự án:
+**Terminal 2 — frontend:**
 
 ```powershell
 cd frontend
-npm ci
 npm run dev
 ```
 
-Vite sẽ in địa chỉ để mở ứng dụng, thông thường là
-`http://localhost:5173`.
+Giữ hai terminal mở, truy cập `http://localhost:5173` hoặc địa chỉ Vite in ra.
+Nếu terminal đã ở `backend`/`frontend`, bỏ lệnh `cd` tương ứng.
 
-### 5. Kiểm tra sau khi cài
+## Kiểm tra sau cài đặt và xử lý lỗi
 
-1. Giữ PostgreSQL, GeoServer, Django và Vite cùng chạy.
-2. Mở ứng dụng, bật một lớp đã publish trong mục lục và kiểm tra bản đồ có dữ liệu.
-3. Mở **Xem dữ liệu**, chọn lớp vector để kiểm tra bảng thuộc tính và API.
-4. Nếu dùng địa hình 3D, điền token Cesium ion vào `VITE_CESIUM_ION_TOKEN`
-   trong `.env`, khởi động lại Vite rồi chuyển sang **3D**. Các dịch vụ bản đồ
-   nền và Cesium cần kết nối Internet.
+- Bật các lớp vector/raster/DEM, mở bảng thuộc tính và tra cứu pixel; thử phân tích
+  độ dốc/hướng dốc trên vùng nhỏ, sau đó thử 3D/mặt cắt.
+- `ERR_CONNECTION_REFUSED` ở cổng `8000`: Django chưa chạy hoặc đã dừng; xem terminal backend.
+- Bản đồ thiếu lớp: kiểm tra dữ liệu, tên layer, CRS và Layer Preview trên GeoServer.
+- Lỗi chuyển CSS: kiểm tra đã cài Java và CSS extension đúng phiên bản GeoServer.
+- Không phân tích được DEM: kiểm tra đã cài QGIS có GDAL, tài khoản GeoServer và đường dẫn GeoTIFF.
+- Style vẫn như bản cũ: bấm **Mặc định** trong công cụ trình bày của lớp rồi tải lại trang.
+- Địa chỉ dịch vụ frontend nằm trong `frontend/src/config/layers.js`; nếu đổi cổng,
+  workspace hoặc máy chủ, sửa `GEOSERVER_CONFIG` tương ứng.
 
-`migrate` chỉ tạo các bảng do Django quản lý; lệnh này không tự nhập dữ liệu GIS
-hoặc publish layer trên GeoServer. Giao diện đăng nhập hiện chỉ là bản demo,
-không cần tạo tài khoản để mở bản đồ.
-
-## Cấu hình địa chỉ dịch vụ
-
-Các địa chỉ GeoServer và Django được khai báo trong:
-
-```text
-frontend/src/config/layers.js
-```
-
-Mặc định dự án dùng:
-
-- GeoServer WMS: `http://localhost:8080/geoserver/webgis/wms`
-- GeoServer WFS: `http://localhost:8080/geoserver/webgis/ows`
-- API Django: `http://localhost:8000/mygis/features`
-
-Nếu cổng, tên workspace hoặc máy chủ khác, sửa các giá trị tương ứng trong
-`GEOSERVER_CONFIG` rồi khởi động lại `npm run dev`.
-
-## File cấu hình .env dùng chung
-
-Django và Vite cùng đọc file `.env` ở thư mục gốc LapTrinhGis, giống cách PTN
-tổ chức. File chứa cấu hình Django, tài khoản PostgreSQL, tài khoản REST GeoServer,
-CORS/CSRF và token Cesium. Trên máy mới, sao chép `.env.example` thành `.env`
-rồi điền thông tin. Git bỏ qua `.env`; file mẫu không chứa mật khẩu hay token thật.
-Thay token Cesium bằng biến:
-
-```env
-VITE_CESIUM_ION_TOKEN=your_cesium_ion_token
-```
-
-Sau khi sửa `.env`, khởi động lại Django và Vite. Biến môi trường đã đặt trong
-terminal được ưu tiên hơn giá trị trong file cho cấu hình Django. Riêng các biến
-`GEOSERVER_*` dùng cho quản trị raster được đọc lại từ `.env` mỗi lần gọi REST,
-ưu tiên giá trị trong file để áp dụng ngay khi sửa tài khoản. Chỉ các biến có tiền tố `VITE_`
-được đưa vào frontend; tài khoản PostgreSQL và GeoServer chỉ dùng ở backend.
-
-## Kiểm tra khi gặp lỗi
-
-- Bản đồ không có dữ liệu: kiểm tra GeoServer đang chạy, workspace là `webgis`,
-  layer đã được publish và URL WMS/WFS trong `layers.js` đúng.
-- Không thêm/sửa/xóa được đối tượng: kiểm tra Django đang chạy và PostgreSQL có
-  đúng các bảng cùng cột dữ liệu cần thiết.
-- `npm ci` lỗi: kiểm tra phiên bản Node.js; dùng 22.12 trở lên.
-- `pip install` lỗi: kiểm tra Python đã được thêm vào PATH và môi trường ảo đã
-  được kích hoạt.
-
-## Lưu ý bảo mật
-
-Không đưa mật khẩu database, token Cesium hay khóa bí mật Django lên GitHub.
-Repository hiện là public; trước khi chia sẻ rộng rãi, hãy kiểm tra lịch sử Git
-và thay mới mọi thông tin nhạy cảm từng bị commit.
+**Giới hạn hiện tại:** đăng nhập chưa kết nối xác thực backend; menu Dự án mới là
+bản xem trước, chưa lưu dự án vào backend. Địa hình Cesium World Terrain dùng cho
+đo/mặt cắt 3D là nguồn riêng với GeoTIFF DEM dùng phân tích.
 
 ## Biên tập dữ liệu (thêm, sửa, xóa)
 
@@ -514,8 +381,8 @@ trình duyệt; GDAL kiểm tra band và tính thống kê ở tiến trình ri�
   hết hiệu lực sau **24 giờ**, không tự xuất bản GeoServer hoặc thêm vào kho DEM.
 - Tệp hết hạn được dọn khi khởi tạo phiên tải mới. Có thể dọn chủ động bằng
   `python manage.py cleanup_dem_uploads` từ thư mục `backend`.
-- Cấu hình `.env`: `DEM_GDAL_PYTHON` trỏ tới Python có GDAL; mặc định sử dụng
-  `C:/Program Files/QGIS 3.40.3/bin/python3.exe`. Runtime QGIS được cách ly với
+- Ứng dụng tự tìm Python có GDAL của QGIS tại các thư mục cài phổ biến.
+  Nếu dùng thư mục riêng, có thể đặt `DEM_GDAL_PYTHON` trong `.env`. Runtime QGIS được cách ly với
   Python của Django. Các giới hạn lưu trữ nằm trong `backend/backend/settings.py`.
 - Tất cả lớp được quản lý chung trong **Dữ liệu raster**, không chia DEM/DSM/DTM hay loại ảnh.
 - Sau khi raster sẵn sàng, chọn **Theo ranh giới lớp** hoặc **Theo vùng cắt** trên
